@@ -20,7 +20,7 @@ export async function generateQuizFromText(pdfOrCourseText: string) {
   const prompt = `Texte du cours à analyser pour générer le quiz :\n\n${pdfOrCourseText.substring(0, 15000)}`;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     contents: prompt,
     config: {
       systemInstruction,

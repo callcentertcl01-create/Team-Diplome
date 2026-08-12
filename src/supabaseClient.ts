@@ -1,22 +1,87 @@
-import { createClient } from '@supabase/supabase-js';
+// Client-side API proxy module
+// Routes all authentication and database requests through our backend server
+// so NO secret API keys or direct Supabase client calls exist in the browser!
 
-let rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-let anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const STORAGE_KEY = 'team_diplome_session';
 
-// Clean up URL in case user copy-pasted "VITE_SUPABASE_URL=https://..." into the value field
-if (rawUrl.includes('=')) {
-  rawUrl = rawUrl.split('=').pop()?.trim() || '';
+export function getStoredSession() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
-// Ensure valid HTTP/HTTPS URL
-if (!rawUrl.startsWith('http')) {
-  console.warn("⚠️ URL Supabase invalide ou manquante. Utilisation d'un espace réservé.");
-  rawUrl = 'https://placeholder.supabase.co';
+export function setStoredSession(session: any) {
+  try {
+    if (session) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {}
 }
 
-if (!anonKey || anonKey === 'placeholder') {
-  console.warn("⚠️ Clé Supabase manquante.");
-  anonKey = 'placeholder';
-}
+export const supabase = {
+  auth: {
+    async getSession() {
+      const session = getStoredSession();
+      return { data: { session }, error: null };
+    },
 
-export const supabase = createClient(rawUrl, anonKey);
+    onAuthStateChange(_callback: Function) {
+      return {
+        data: {
+          subscription: {
+            unsubscribe: () => {}
+          }
+        }
+      };
+    },
+
+    async signInWithPassword({ email, password }: { email: string; password: any }) {
+      try {
+        const res = await fetch('/api/auth/supabase-signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return { data: { user: null, session: null }, error: new Error(data.error || 'Erreur de connexion.') };
+        }
+        setStoredSession(data.session);
+        return { data: { user: data.user, session: data.session }, error: null };
+      } catch (err: any) {
+        return { data: { user: null, session: null }, error: new Error("Impossible de joindre le serveur.") };
+      }
+    },
+
+    async signUp({ email, password, options }: { email: string; password: any; options?: any }) {
+      try {
+        const firstName = options?.data?.first_name || '';
+        const lastName = options?.data?.last_name || '';
+
+        const res = await fetch('/api/auth/supabase-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, firstName, lastName })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return { data: { user: null, session: null }, error: new Error(data.error || "Erreur lors de l'inscription.") };
+        }
+        setStoredSession(data.session);
+        return { data: { user: data.user, session: data.session }, error: null };
+      } catch (err: any) {
+        return { data: { user: null, session: null }, error: new Error("Impossible de joindre le serveur.") };
+      }
+    },
+
+    async signOut() {
+      setStoredSession(null);
+      return { error: null };
+    }
+  }
+};

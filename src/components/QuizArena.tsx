@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Session, Submission, User } from '../types';
-import { Clock, CheckCircle2, XCircle, AlertCircle, Sparkles, ArrowRight, ArrowLeft, Award, HelpCircle, FileCheck, RefreshCw } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, AlertCircle, Sparkles, ArrowRight, ArrowLeft, Award, HelpCircle, FileCheck, RefreshCw, Lock } from 'lucide-react';
 
 interface QuizArenaProps {
   session: Session;
@@ -24,6 +24,10 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<Submission | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const isToday = session.date === todayStr;
 
   // Countdown timer effect
   useEffect(() => {
@@ -90,6 +94,42 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
     }
   };
 
+  // Block quiz if not scheduled for today
+  if (!isToday && !submissionResult) {
+    return (
+      <div className="bg-white border-2 border-slate-200 border-l-4 border-l-amber-500 rounded-2xl p-8 text-center space-y-4 shadow-md max-w-2xl mx-auto">
+        <div className="w-16 h-16 bg-amber-50 rounded-2xl border border-amber-300 flex items-center justify-center mx-auto shadow-sm">
+          <Lock className="w-8 h-8 text-amber-600" />
+        </div>
+        <h2 className="text-xl font-extrabold text-slate-900 uppercase tracking-tight flex items-center justify-center gap-2">
+          Quiz Verrouillé (Date Non Atteinte)
+        </h2>
+        <p className="text-sm text-slate-600 leading-relaxed max-w-md mx-auto">
+          Ce quiz est programmé pour le <strong className="text-slate-900">{session.date}</strong>. Vous ne pouvez passer les quiz que le jour exact de leur programmation.
+        </p>
+
+        {/* Blurred Quiz Preview */}
+        <div className="relative mt-4 p-6 bg-slate-50 border border-slate-200 rounded-2xl filter blur-sm select-none opacity-50 space-y-3">
+          <div className="h-4 bg-slate-300 rounded w-3/4 mx-auto" />
+          <div className="h-3 bg-slate-200 rounded w-1/2 mx-auto" />
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <div className="h-10 bg-slate-200 rounded" />
+            <div className="h-10 bg-slate-200 rounded" />
+          </div>
+        </div>
+
+        <div className="pt-4">
+          <button
+            onClick={onCancel}
+            className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-md transition-all cursor-pointer"
+          >
+            Retour au planning
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!quiz || questions.length === 0) {
     return (
       <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-md">
@@ -100,7 +140,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
         </p>
         <button
           onClick={onCancel}
-          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-2xl border border-slate-300"
+          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-2xl border border-slate-300 cursor-pointer"
         >
           Retour au planning
         </button>
@@ -242,7 +282,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
         <div className="flex justify-center pt-4">
           <button
             onClick={onCancel}
-            className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-[#0f172a] font-bold text-xs uppercase tracking-wider rounded-2xl shadow-md transition-all"
+            className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-md transition-all cursor-pointer"
           >
             Retourner au planning
           </button>
@@ -282,7 +322,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
         </div>
 
         {/* Bonus / Malus Reminder Banner */}
-        <div className="bg-slate-100 border border-slate-900/30 rounded-2xl p-3 text-xs text-amber-200 flex items-center justify-between gap-3">
+        <div className="bg-slate-100 border border-slate-900/30 rounded-2xl p-3 text-xs text-slate-800 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-slate-900 shrink-0" />
             <span>
@@ -304,12 +344,12 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
               <button
                 key={idx}
                 onClick={() => setCurrentQuestionIndex(idx)}
-                className={`w-8 h-8 rounded-xl font-bold font-mono text-xs transition-all ${
+                className={`w-8 h-8 rounded-xl font-bold font-mono text-xs transition-all cursor-pointer ${
                   isCurrent
-                    ? 'bg-slate-900 text-[#0f172a] shadow-sm'
+                    ? 'bg-slate-900 text-white shadow-sm'
                     : isAnswered
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                    : 'bg-slate-100 text-slate-400 hover:bg-slate-700'
+                    ? 'bg-emerald-500/20 text-emerald-700 border border-emerald-500/40'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-800 hover:text-white'
                 }`}
               >
                 {idx + 1}
@@ -343,14 +383,14 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
               <button
                 key={cIdx}
                 onClick={() => handleSelectChoice(cIdx)}
-                className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-4 ${
+                className={`w-full text-left p-4 rounded-2xl border transition-all flex items-center gap-4 cursor-pointer ${
                   isSelected
-                    ? 'bg-slate-100 border-slate-900 text-amber-200 font-bold'
+                    ? 'bg-slate-900 border-slate-900 text-white font-bold'
                     : 'bg-white/80 hover:bg-slate-100 border-slate-200 text-slate-700'
                 }`}
               >
                 <div className={`w-8 h-8 rounded-xl font-mono text-xs font-bold flex items-center justify-center shrink-0 transition-colors ${
-                  isSelected ? 'bg-slate-900 text-[#0f172a]' : 'bg-slate-100 text-slate-400'
+                  isSelected ? 'bg-white text-slate-900' : 'bg-slate-100 text-slate-700'
                 }`}>
                   {String.fromCharCode(65 + cIdx)}
                 </div>
@@ -379,7 +419,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
             <button
               onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
               disabled={currentQuestionIndex === 0}
-              className="px-4 py-2 rounded-2xl bg-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50 border border-slate-300"
+              className="px-4 py-2 rounded-2xl bg-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider hover:bg-slate-700 hover:text-white disabled:opacity-50 border border-slate-300 cursor-pointer"
             >
               Précédent
             </button>
@@ -387,7 +427,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
             {currentQuestionIndex < questions.length - 1 ? (
               <button
                 onClick={() => setCurrentQuestionIndex(prev => Math.min(questions.length - 1, prev + 1))}
-                className="px-5 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-[#0f172a] text-xs font-bold uppercase tracking-wider transition-all"
+                className="px-5 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
               >
                 Suivant
               </button>
@@ -395,7 +435,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
               <button
                 onClick={handleSubmitQuiz}
                 disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-[#0f172a] font-black text-xs uppercase tracking-wider shadow-md flex items-center gap-2"
+                className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-md flex items-center gap-2 cursor-pointer"
               >
                 {isSubmitting ? (
                   <>

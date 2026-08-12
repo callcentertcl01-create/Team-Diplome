@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { db } from "./server/db";
 import { generateQuizFromText } from "./server/gemini";
+import { getSupabaseServer } from "./server/supabaseServer";
 
 async function startServer() {
   const app = express();
@@ -12,9 +13,123 @@ async function startServer() {
 
   // --- API ENDPOINTS ---
 
-  // 1. Auth & Users
+  // 1. Auth & Users (Server-side handled to protect API keys)
   app.get("/api/users", (req, res) => {
     res.json(db.getUsers());
+  });
+
+  app.post("/api/auth/supabase-signup", async (req, res) => {
+    const { firstName, lastName, email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "L'adresse e-mail et le mot de passe sont requis." });
+    }
+
+    const fullName = `${firstName || ''} ${lastName || ''}`.trim() || email;
+    const localUser = db.registerStudent(fullName, email);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              first_name: firstName,
+              last_name: lastName,
+              full_name: fullName
+            }
+          }
+        });
+
+        if (error) {
+          console.warn("Avertissement Supabase Auth SignUp :", error.message);
+          // If error is about email taken, return it
+          if (error.message.includes("already registered")) {
+            return res.status(400).json({ error: "Un compte existe déjà avec cet e-mail. Veuillez vous connecter." });
+          }
+        }
+
+        return res.json({
+          user: {
+            id: data?.user?.id || localUser.id,
+            email: localUser.email,
+            name: localUser.name,
+            role: localUser.role,
+            avatar: localUser.avatar
+          },
+          session: data?.session || { user: { id: localUser.id, email: localUser.email } }
+        });
+      } catch (err: any) {
+        console.error("Erreur backend Supabase Auth SignUp :", err);
+      }
+    }
+
+    return res.json({
+      user: localUser,
+      session: { user: { id: localUser.id, email: localUser.email } }
+    });
+  });
+
+  app.post("/api/auth/supabase-signin", async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "L'adresse e-mail et le mot de passe sont requis." });
+    }
+
+    // Check admin credentials
+    if (email.toLowerCase() === 'admin@teamdiplome.com' && password === 'admin123') {
+      let adminUser = db.getUserByEmail(email);
+      if (!adminUser) {
+        adminUser = {
+          id: 'admin-1',
+          email,
+          name: 'Prof. Alexandre Vance (Admin)',
+          role: 'admin',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+        };
+      }
+      return res.json({
+        user: adminUser,
+        session: { user: { id: adminUser.id, email: adminUser.email, role: 'admin' } }
+      });
+    }
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (!error && data?.user) {
+          let localUser = db.getUserByEmail(email);
+          if (!localUser) {
+            localUser = db.registerStudent(data.user.user_metadata?.full_name || email, email);
+          }
+          return res.json({
+            user: localUser,
+            session: data.session
+          });
+        } else if (error) {
+          console.warn("Auth signin attempt failed via Supabase :", error.message);
+        }
+      } catch (err: any) {
+        console.error("Erreur backend Supabase Auth SignIn :", err);
+      }
+    }
+
+    // Fallback to local DB lookup
+    const localUser = db.getUserByEmail(email);
+    if (localUser) {
+      return res.json({
+        user: localUser,
+        session: { user: { id: localUser.id, email: localUser.email } }
+      });
+    }
+
+    return res.status(401).json({ error: "Identifiants invalides. Vérifiez votre adresse e-mail et votre mot de passe." });
   });
 
   app.post("/api/auth/login", (req, res) => {
@@ -56,6 +171,24 @@ async function startServer() {
     }
     const moduleObj = db.createModule(code, title, description || "");
     return res.json(moduleObj);
+  });
+
+  app.delete("/api/modules/:id", (req, res) => {
+    try {
+      db.deleteModule(req.params.id);
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/sessions/:id", (req, res) => {
+    try {
+      db.deleteSession(req.params.id);
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
   });
 
   app.post("/api/modules/:id/sessions", (req, res) => {
@@ -184,6 +317,16 @@ async function startServer() {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", "attachment; filename=team_diplome_resultats.csv");
     return res.send(csv);
+  });
+
+  // 9. Reset database to zero
+  app.post("/api/admin/reset-database", async (req, res) => {
+    try {
+      await db.resetAllData();
+      return res.json({ success: true, message: "Base de données réinitialisée à zéro." });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Erreur lors de la réinitialisation" });
+    }
   });
 
   // --- VITE / STATIC SERVING ---

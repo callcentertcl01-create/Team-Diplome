@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Module, Session, Submission, User } from '../types';
-import { BookOpen, Calendar, Clock, FileText, CheckCircle2, AlertTriangle, Play, Sparkles, ChevronRight, Award, Bell } from 'lucide-react';
+import { BookOpen, Calendar, Clock, FileText, CheckCircle2, AlertTriangle, Play, Sparkles, ChevronRight, Award, Bell, Lock } from 'lucide-react';
 
 interface StudentPlanningProps {
   modules: Module[];
@@ -19,6 +19,9 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
 }) => {
   const [selectedModuleId, setSelectedModuleId] = useState<string>('all');
   const [showPdfModal, setShowPdfModal] = useState<Session | null>(null);
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   // Flatten all sessions sorted by date
   const allSessions: { session: Session; module: Module }[] = [];
@@ -96,10 +99,10 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
         <button
           onClick={() => setSelectedModuleId('all')}
-          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap ${
+          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap cursor-pointer ${
             selectedModuleId === 'all'
-              ? 'bg-slate-900 text-[#0f172a] shadow-sm'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-700 hover:text-slate-900 border border-slate-300'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-300'
           }`}
         >
           Tous les modules ({allSessions.length} sessions)
@@ -109,10 +112,10 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
           <button
             key={mod.id}
             onClick={() => setSelectedModuleId(mod.id)}
-            className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
               selectedModuleId === mod.id
-                ? 'bg-slate-900 text-[#0f172a] shadow-sm'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-700 hover:text-slate-900 border border-slate-300'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-300'
             }`}
           >
             <span className="text-[10px] opacity-75 font-mono">{mod.code}</span>
@@ -123,10 +126,23 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
 
       {/* Sessions Timeline List */}
       <div className="space-y-4">
+        {filteredSessions.length === 0 && (
+          <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center space-y-3">
+            <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800">Aucune session de cours programmée</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              Aucun module ou cours n'a été créé pour le moment. L'administrateur peut ajouter de nouveaux modules et générer des quiz depuis l'espace d'administration.
+            </p>
+          </div>
+        )}
+
         {filteredSessions.map(({ session, module }) => {
           const submission = getSubmissionForSession(session.id);
           const [year, month, day] = session.date.split('-');
           const formattedDate = `${day}/${month}/${year}`;
+          const isToday = session.date === todayStr;
 
           return (
             <div
@@ -134,6 +150,8 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
               className={`bg-white rounded-2xl border transition-all p-5 ${
                 submission
                   ? 'border-emerald-500/50 border-l-4 border-l-emerald-500'
+                  : !isToday
+                  ? 'border-amber-300/80 border-l-4 border-l-amber-500 bg-slate-50/50'
                   : session.isQuizReady
                   ? 'border-slate-900/60 border-l-4 border-l-slate-900'
                   : 'border-slate-200 border-l-4 border-l-slate-700'
@@ -147,9 +165,11 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                     <span className="px-2.5 py-1 rounded-xl bg-white border border-slate-300 text-slate-900 font-mono text-xs font-bold">
                       {module.code}
                     </span>
-                    <span className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold bg-white/80 px-2.5 py-1 rounded-xl border border-slate-200">
+                    <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-xl border ${
+                      isToday ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-extrabold' : 'bg-white/80 text-slate-700 border-slate-200'
+                    }`}>
                       <Calendar className="w-3.5 h-3.5 text-slate-900" />
-                      {formattedDate}
+                      {formattedDate} {isToday && '• Aujourd\'hui'}
                     </span>
                     <span className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold bg-white/80 px-2.5 py-1 rounded-xl border border-slate-200">
                       <Clock className="w-3.5 h-3.5 text-slate-900" />
@@ -160,6 +180,11 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                       <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-1 uppercase tracking-wider">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                         Quiz Déjà Soumis
+                      </span>
+                    ) : !isToday ? (
+                      <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider">
+                        <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>Vérouillé (Prévu le {formattedDate})</span>
                       </span>
                     ) : session.isQuizReady ? (
                       <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 border border-slate-900/40 text-xs font-bold uppercase tracking-wider animate-pulse">
@@ -189,7 +214,7 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                   {session.pdfFileName && (
                     <button
                       onClick={() => setShowPdfModal(session)}
-                      className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-700 text-slate-800 border border-slate-300 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors"
+                      className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-700 text-slate-800 hover:text-white border border-slate-300 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors cursor-pointer"
                     >
                       <FileText className="w-4 h-4 text-slate-900" />
                       Cours PDF
@@ -215,11 +240,25 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
 
                       <button
                         onClick={() => onViewSubmissionDetail(submission)}
-                        className="px-3.5 py-2 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                        className="px-3.5 py-2 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         Détail
                         <ChevronRight className="w-4 h-4" />
                       </button>
+                    </div>
+                  ) : !isToday ? (
+                    <div className="relative flex items-center gap-2">
+                      <button
+                        disabled
+                        className="px-5 py-2 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm bg-slate-100 text-slate-400 border border-slate-300 cursor-not-allowed filter blur-[2px] opacity-60 select-none"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>Passer le Quiz</span>
+                      </button>
+                      <span className="flex items-center gap-1 text-[11px] font-black uppercase text-slate-800 bg-amber-100 px-2.5 py-1 rounded-xl shadow-sm border border-amber-300">
+                        <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>Vérouillé</span>
+                      </span>
                     </div>
                   ) : (
                     <button
@@ -227,11 +266,11 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                       disabled={!session.isQuizReady}
                       className={`px-5 py-2 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all ${
                         session.isQuizReady
-                          ? 'bg-slate-900 text-[#0f172a] hover:bg-slate-800 active:scale-95'
+                          ? 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95 cursor-pointer'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-300'
                       }`}
                     >
-                      <Play className="w-4 h-4 fill-current" />
+                      <Play className="w-4 h-4 fill-current text-white" />
                       {session.isQuizReady ? 'Passer le Quiz' : 'Quiz non prêt'}
                     </button>
                   )}

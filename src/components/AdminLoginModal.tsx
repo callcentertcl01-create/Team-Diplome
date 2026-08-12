@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { ShieldCheck, Lock, Mail, ArrowRight, AlertCircle, Award } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -26,6 +27,27 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setError(null);
 
     try {
+      // 1. Try Supabase Auth first
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (!authErr && authData.user) {
+        const u = authData.user;
+        const adminUser: User = {
+          id: u.id,
+          email: u.email!,
+          name: u.user_metadata?.full_name || 'Prof. Alexandre Vance (Admin)',
+          role: 'admin',
+          avatar: u.user_metadata?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+        };
+        onLoginSuccess(adminUser);
+        onClose();
+        return;
+      }
+
+      // 2. Fallback to API check
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,7 +62,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       onLoginSuccess(data.user);
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Identifiants invalides.");
     } finally {
       setIsLoading(false);
     }
@@ -51,7 +73,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       <div className="bg-white border-2 border-slate-300 border-l-8 border-l-slate-900 rounded-2xl max-w-md w-full p-8 space-y-6 shadow-md relative overflow-hidden">
         
         <div className="text-center space-y-2 relative z-10">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-900 flex items-center justify-center text-[#0f172a] shadow-md">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md">
             <ShieldCheck className="w-8 h-8" />
           </div>
           <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
@@ -110,7 +132,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <button
               type="submit"
               disabled={isLoading}
-              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-[#0f172a] font-black uppercase tracking-wider rounded-2xl text-xs shadow-md flex items-center justify-center gap-2 transition-colors"
+              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-wider rounded-2xl text-xs shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               {isLoading ? 'Vérification...' : 'Se connecter (Admin)'}
               <ArrowRight className="w-4 h-4" />

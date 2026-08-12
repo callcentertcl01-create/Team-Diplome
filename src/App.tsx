@@ -29,12 +29,32 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (session?.user && !currentUser) {
+        const u = session.user;
+        setCurrentUser({
+          id: u.id || 'usr-' + Date.now(),
+          email: u.email || '',
+          name: u.user_metadata?.full_name || u.name || u.email || 'Étudiant',
+          role: u.role || 'student',
+          avatar: u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.email || 'user')}`
+        });
+      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session?.user) {
+        const u = session.user;
+        setCurrentUser({
+          id: u.id || 'usr-' + Date.now(),
+          email: u.email || '',
+          name: u.user_metadata?.full_name || u.name || u.email || 'Étudiant',
+          role: u.role || 'student',
+          avatar: u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.email || 'user')}`
+        });
+      }
     });
 
     const handleOpenAdmin = () => setShowAdminLoginModal(true);
@@ -59,17 +79,17 @@ export default function App() {
 
       // Match Supabase session to local user if logged in
       if (session?.user) {
-        const localUser = usersData.find((u: User) => u.email.toLowerCase() === session.user.email?.toLowerCase());
+        const localUser = usersData.find((u: User) => u.email?.toLowerCase() === session.user.email?.toLowerCase());
         if (localUser) {
           setCurrentUser(localUser);
-        } else {
-          // Fallback if not perfectly synced yet
+        } else if (!currentUser) {
+          const u = session.user;
           setCurrentUser({
-            id: session.user.id,
-            email: session.user.email!,
-            name: session.user.user_metadata?.full_name || session.user.email!,
-            role: 'student',
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(session.user.email!)}`
+            id: u.id || 'usr-' + Date.now(),
+            email: u.email || '',
+            name: u.user_metadata?.full_name || u.name || u.email || 'Étudiant',
+            role: u.role || 'student',
+            avatar: u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.email || 'user')}`
           });
         }
       }
@@ -148,7 +168,18 @@ export default function App() {
   if (!session && currentUser?.role !== 'admin') {
     return (
       <>
-        <SupabaseAuth onAuthSuccess={(user) => setSession({ user })} />
+        <SupabaseAuth onAuthSuccess={(user) => {
+          setSession({ user });
+          if (user) {
+            setCurrentUser({
+              id: user.id || 'usr-' + Date.now(),
+              email: user.email || '',
+              name: user.name || user.user_metadata?.full_name || user.email || 'Étudiant',
+              role: user.role || 'student',
+              avatar: user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.email || 'user')}`
+            });
+          }
+        }} />
         {showAdminLoginModal && (
           <AdminLoginModal
             onClose={() => setShowAdminLoginModal(false)}

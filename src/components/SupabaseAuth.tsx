@@ -47,13 +47,14 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
     } catch (err: any) {
       let errorMessage = err.message || 'Une erreur est survenue.';
       if (errorMessage.includes('Failed to fetch')) {
-        errorMessage = "Impossible de se connecter à Supabase. Vérifiez que VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY sont bien configurés dans les variables d'environnement.";
+        errorMessage = "Impossible de se connecter à Supabase. Vérifiez que VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY sont bien renseignés.";
       }
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
+
 
   const syncUserWithBackend = async (supabaseUser: any) => {
     if (!supabaseUser) return;
@@ -163,22 +164,25 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
         <div className="text-center pt-4 border-t border-slate-100 space-y-3">
           <button
             type="button"
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setError(null);
+            }}
+            className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors block w-full"
           >
-            {isLogin ? "Pas encore de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
+            {isLogin ? "Pas encore de compte étudiant ? S'inscrire" : 'Déjà un compte étudiant ? Se connecter'}
           </button>
           
-          <div>
+          <div className="pt-2 border-t border-slate-100">
             <button
               type="button"
               onClick={() => {
-                // We'll dispatch a custom event that App.tsx can listen to, or pass a prop
                 window.dispatchEvent(new CustomEvent('open-admin-login'));
               }}
-              className="text-xs text-slate-400 hover:text-slate-600 font-medium transition-colors"
+              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors border border-slate-200"
             >
-              Accès Professeur / Administrateur
+              <ShieldCheck className="w-4 h-4 text-slate-700" />
+              Espace Enseignant / Administrateur
             </button>
           </div>
         </div>

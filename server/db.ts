@@ -1,18 +1,144 @@
 import { User, Module, Session, Quiz, Submission, AdminAnalytics, StudentProgress, ModuleStat, DailyScoreTrend } from '../src/types';
 import { calculateBonusMalusScore } from './scoreUtils';
+import { getSupabaseServer } from './supabaseServer';
 
-// In-Memory Database Store
+// Database Store with Supabase Synchronization
 class DatabaseStore {
   private users: User[] = [];
   private modules: Module[] = [];
   private submissions: Submission[] = [];
+  private isSyncedWithSupabase = false;
 
   constructor() {
     this.seedInitialData();
+    this.initSupabaseSync();
+  }
+
+  private async initSupabaseSync() {
+    const supabase = getSupabaseServer();
+    if (!supabase) return;
+
+    try {
+      // 1. Fetch Users / Profiles from Supabase
+      const { data: profiles, error: pErr } = await supabase.from('profiles').select('*');
+      if (!pErr && profiles && profiles.length > 0) {
+        profiles.forEach((p: any) => {
+          const existingIndex = this.users.findIndex(u => u.id === p.id || u.email.toLowerCase() === p.email?.toLowerCase());
+          const mappedUser: User = {
+            id: p.id,
+            email: p.email,
+            name: p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.email,
+            role: p.role || 'student',
+            avatar: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.email)}`
+          };
+          if (existingIndex >= 0) {
+            this.users[existingIndex] = mappedUser;
+          } else {
+            this.users.push(mappedUser);
+          }
+        });
+      }
+
+      // 2. Fetch Modules & Sessions from Supabase
+      const { data: dbModules, error: mErr } = await supabase.from('modules').select('*');
+      const { data: dbSessions, error: sErr } = await supabase.from('sessions').select('*');
+
+      if (!mErr && dbModules && dbModules.length > 0) {
+        this.modules = dbModules.map((m: any) => {
+          const mSessions = (dbSessions || [])
+            .filter((s: any) => s.module_id === m.id)
+            .map((s: any) => ({
+              id: s.id,
+              moduleId: m.id,
+              moduleTitle: m.title,
+              title: s.title,
+              date: s.date,
+              startTime: s.start_time || '15:00',
+              endTime: s.end_time || '16:00',
+              pdfFileName: s.pdf_file_name,
+              pdfTextSnippet: s.pdf_text_snippet,
+              isQuizReady: s.is_quiz_ready || false,
+              status: s.status || 'pending',
+              quiz: s.quiz || undefined
+            }));
+
+          return {
+            id: m.id,
+            code: m.code,
+            title: m.title,
+            description: m.description || '',
+            sessions: mSessions
+          };
+        });
+      } else {
+        // Seed initial modules to Supabase if empty
+        await this.pushModulesToSupabase();
+      }
+
+      // 3. Fetch Submissions from Supabase
+      const { data: dbSubmissions, error: subErr } = await supabase.from('submissions').select('*');
+      if (!subErr && dbSubmissions) {
+        this.submissions = dbSubmissions.map((s: any) => ({
+          id: s.id,
+          sessionId: s.session_id,
+          sessionTitle: s.session_title || 'Session',
+          moduleTitle: s.module_title || 'Module',
+          sessionDate: s.session_date || s.submitted_at?.split('T')[0] || '2026-08-12',
+          studentId: s.student_id,
+          studentName: s.student_name || 'Étudiant',
+          studentEmail: s.student_email || '',
+          submittedAt: s.submitted_at,
+          answers: s.answers || [],
+          baseScore: Number(s.base_score || 0),
+          adjustment: Number(s.adjustment || 0),
+          finalScore: Number(s.final_score || 0),
+          isValidated: s.is_validated || false,
+          isLate: s.is_late || false,
+          lateDays: Number(s.late_days || 0)
+        }));
+      }
+
+      this.isSyncedWithSupabase = true;
+      console.log('✅ Synchronisation BDD Supabase achevée.');
+    } catch (err) {
+      console.warn('⚠️ Impossible de synchroniser avec la BDD Supabase (Mode In-Memory maintenu) :', err);
+    }
+  }
+
+  private async pushModulesToSupabase() {
+    const supabase = getSupabaseServer();
+    if (!supabase) return;
+
+    for (const mod of this.modules) {
+      await supabase.from('modules').upsert({
+        id: mod.id,
+        code: mod.code,
+        title: mod.title,
+        description: mod.description
+      });
+
+      for (const sess of mod.sessions) {
+        await supabase.from('sessions').upsert({
+          id: sess.id,
+          module_id: mod.id,
+          module_title: mod.title,
+          title: sess.title,
+          date: sess.date,
+          start_time: sess.startTime,
+          end_time: sess.endTime,
+          pdf_file_name: sess.pdfFileName,
+          pdf_text_snippet: sess.pdfTextSnippet,
+          is_quiz_ready: sess.isQuizReady,
+          status: sess.status,
+          quiz: sess.quiz
+        });
+      }
+    }
   }
 
   private seedInitialData() {
-    // 1. Users
+    // Starting completely from scratch: zero mock students, zero modules, zero submissions.
+    // Default admin retained so administrator can log in.
     this.users = [
       {
         id: 'u-admin',
@@ -20,424 +146,11 @@ class DatabaseStore {
         name: 'Prof. Alexandre Vance',
         role: 'admin',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
-      },
-      {
-        id: 'u-stud-1',
-        email: 'marie.dubois@teamdiplome.com',
-        name: 'Marie Dubois',
-        role: 'student',
-        avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200'
-      },
-      {
-        id: 'u-stud-2',
-        email: 'jean.koffi@teamdiplome.com',
-        name: 'Jean-Baptiste Koffi',
-        role: 'student',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200'
-      },
-      {
-        id: 'u-stud-3',
-        email: 'sophie.martin@teamdiplome.com',
-        name: 'Sophie Martin',
-        role: 'student',
-        avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=200'
-      },
-      {
-        id: 'u-stud-4',
-        email: 'lucas.moreau@teamdiplome.com',
-        name: 'Lucas Moreau',
-        role: 'student',
-        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200'
-      },
-      {
-        id: 'u-stud-5',
-        email: 'amina.diallo@teamdiplome.com',
-        name: 'Amina Diallo',
-        role: 'student',
-        avatar: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&q=80&w=200'
-      },
-      {
-        id: 'u-stud-6',
-        email: 'thomas.bernard@teamdiplome.com',
-        name: 'Thomas Bernard',
-        role: 'student',
-        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200'
       }
     ];
 
-    // Helper to generate a 10 QCM sample quiz
-    const createSampleQuiz = (id: string, title: string, theme: string): Quiz => ({
-      id,
-      title,
-      questions: [
-        {
-          id: `${id}-q1`,
-          question: `Qu'est-ce que l'élément d'extranéité dans le domaine de ${theme} ?`,
-          choices: [
-            "La présence d'un élément étranger reliant la situation juridique à un autre État",
-            "L'interdiction absolue de traiter avec des entreprises étrangères",
-            "Une clause d'exonération fiscale réservée aux diplomates",
-            "Un différend territorial jugé exclusivement par le Conseil de Sécurité"
-          ],
-          correctAnswer: 0,
-          explanation: "L'élément d'extranéité est l'élément de fait ou de droit qui met en relation une situation juridique avec un ordre juridique étranger."
-        },
-        {
-          id: `${id}-q2`,
-          question: `Quel principe régit la souveraineté absolue des États selon la Charte des Nations Unies ?`,
-          choices: [
-            "Le principe de suprématie monétaire",
-            "L'égalité souveraine des États et la non-ingérence dans les affaires intérieures",
-            "La libre circulation sans contrôle douanier",
-            "L'obligation de soumission aux décrets multilatéraux"
-          ],
-          correctAnswer: 1,
-          explanation: "Article 2§1 de la Charte de l'ONU : L'Organisation est fondée sur le principe de l'égalité souveraine de tous ses Membres."
-        },
-        {
-          id: `${id}-q3`,
-          question: `Selon la théorie réaliste des Relations Internationales, quel est l'acteur principal du système ?`,
-          choices: [
-            "Les organisations non gouvernementales (ONG)",
-            "L'État-nation agissant dans un système anarchique",
-            "Les firmes multinationales",
-            "Les instances religieuses supranationales"
-          ],
-          correctAnswer: 1,
-          explanation: "Le réalisme (Morgenthau, Waltz) considère l'État souverain comme l'unité centrale guidée par la quête d'intérêt national et de puissance."
-        },
-        {
-          id: `${id}-q4`,
-          question: `Quelle est la définition juridique d'un marché public ?`,
-          choices: [
-            "Un contrat conclu à titre onéreux entre un acheteur public et un opérateur économique",
-            "Une décision unilatérale prise par le préfet",
-            "Un accord de partenariat informel entre deux communes",
-            "Un bail commercial privé conclu sans mise en concurrence"
-          ],
-          correctAnswer: 0,
-          explanation: "Le marché public est un contrat à titre onéreux répondant aux besoins de l'acheteur public en matière de travaux, fournitures ou services."
-        },
-        {
-          id: `${id}-q5`,
-          question: `En droit fiscal douanier, qu'appelle-t-on la valeur en douane à l'importation ?`,
-          choices: [
-            "Le prix de revente final sur le marché local",
-            "La valeur transactionnelle ajustée des frais de transport et d'assurance (prix CIF)",
-            "Le coût de fabrication net en usine",
-            "Une taxe forfaitaire fixe attribuée par la douane"
-          ],
-          correctAnswer: 1,
-          explanation: "La valeur en douane se base principalement sur la valeur transactionnelle (cout, assurance, fret jusqu'à la frontière d'entrée)."
-        },
-        {
-          id: `${id}-q6`,
-          question: `Quel auteur est associé au concept de 'Dilemme de sécurité' en Relations Internationales ?`,
-          choices: [
-            "John H. Herz",
-            "Adam Smith",
-            "René Cassin",
-            "Hugo Grotius"
-          ],
-          correctAnswer: 0,
-          explanation: "John Herz a formalisé le dilemme de sécurité en 1951, expliquant comment la quête de sécurité d'un État accroît l'insécurité des autres."
-        },
-        {
-          id: `${id}-q7`,
-          question: `Quelle condition est indispensable pour engager la responsabilité contractuelle de l'Administration ?`,
-          choices: [
-            "Une faute lourde ou un préjudice direct et certain",
-            "Une grève générale des agents territoriaux",
-            "Un avis défavorable du Conseil économique et social",
-            "Une baisse du chiffre d'affaires du sous-traitant"
-          ],
-          correctAnswer: 0,
-          explanation: "La responsabilité contractuelle administrative exige un manquement contractuel et un préjudice direct et certain."
-        },
-        {
-          id: `${id}-q8`,
-          question: `Dans le cadre de la GRH publique, que garantit le principe du statut général des fonctionnaires ?`,
-          choices: [
-            "La séparation du grade et de l'emploi",
-            "L'attribution automatique d'un logement de fonction",
-            "L'interdiction de tout syndicat dans l'administration",
-            "L'exemption totale d'impôt sur le revenu"
-          ],
-          correctAnswer: 0,
-          explanation: "Le principe fondamental du statut de la fonction publique garantit la séparation du grade (titre) et de l'emploi (poste occupé)."
-        },
-        {
-          id: `${id}-q9`,
-          question: `Qu'est-ce que le Traité de Westphalie (1648) a instauré dans l'ordre international ?`,
-          choices: [
-            "Le système westphalien fondé sur la souveraineté territoriale des États",
-            "La création du Fonds Monétaire International",
-            "Le contrôle des armements nucléaires",
-            "La cour permanente de justice internationale"
-          ],
-          correctAnswer: 0,
-          explanation: "Les traités de Westphalie ont consacré l'État souverain territorial comme fondement des relations internationales modernes."
-        },
-        {
-          id: `${id}-q10`,
-          question: `Quelle est la règle de décision principale du Conseil de Sécurité de l'ONU pour les questions non procédurales ?`,
-          choices: [
-            "Majorité simple des 193 membres de l'Assemblée Générale",
-            "Vote affirmatif de 9 membres dont le droit de veto des 5 membres permanents",
-            "Unanimité absolue des 15 membres sans possibilité d'abstention",
-            "Consensus obligatoire des 27 membres de l'Union Européenne"
-          ],
-          correctAnswer: 1,
-          explanation: "Article 27§3 de la Charte : les décisions requièrent 9 voix affirmatives incluant le vote concordant des 5 membres permanents (P5)."
-        }
-      ]
-    });
-
-    // 2. Modules & Sessions (Timeline Aug 11 - Aug 25 2026)
-    this.modules = [
-      {
-        id: 'mod-1',
-        code: 'MOD-101',
-        title: 'Théorie & Doctrines des Relations Internationales',
-        description: 'Analyse des paradigmes réaliste, libéral, constructiviste et étude des concepts clés d extranéité et de souveraineté.',
-        sessions: [
-          {
-            id: 'sess-101-1',
-            moduleId: 'mod-1',
-            moduleTitle: 'Théorie & Doctrines des RI',
-            title: 'Jour 1 - Courants Réalistes et Libéraux',
-            date: '2026-08-12',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_RI_Module1_Jour1.pdf',
-            pdfTextSnippet: 'Le réalisme considère les États comme des acteurs rationnels dans un système anarchique. Morgenthau formalise l intérêt national en termes de puissance.',
-            quiz: createSampleQuiz('q-101-1', 'Quiz - Doctrines des RI (Jour 1)', 'Théorie des RI'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-101-2',
-            moduleId: 'mod-1',
-            moduleTitle: 'Théorie & Doctrines des RI',
-            title: 'Jour 2 - Extranéité & Souveraineté des États',
-            date: '2026-08-13',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_RI_Module1_Jour2.pdf',
-            pdfTextSnippet: 'L extranéité caractérise toute situation juridique comportant un élément rattaché à un État étranger. La souveraineté en est le pilier.',
-            quiz: createSampleQuiz('q-101-2', 'Quiz - Extranéité & Souveraineté (Jour 2)', 'Relations Internationales'),
-            isQuizReady: true,
-            status: 'ready'
-          }
-        ]
-      },
-      {
-        id: 'mod-2',
-        code: 'MOD-102',
-        title: 'Législation Fiscale & Douanière',
-        description: 'Régimes douaniers, valeur transactionnelle, TVA à l importation et contentieux fiscal international.',
-        sessions: [
-          {
-            id: 'sess-102-1',
-            moduleId: 'mod-2',
-            moduleTitle: 'Législation Fiscale & Douanière',
-            title: 'Jour 1 - Tarifs Douaniers & Valeur en Douane',
-            date: '2026-08-14',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Fiscalite_Module2_Jour1.pdf',
-            pdfTextSnippet: 'La valeur en douane des marchandises importées est la valeur transactionnelle, c est-à-dire le prix effectivement payé.',
-            quiz: createSampleQuiz('q-102-1', 'Quiz - Tarifs Douaniers & Fiscalité', 'Droit Fiscal'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-102-2',
-            moduleId: 'mod-2',
-            moduleTitle: 'Législation Fiscale & Douanière',
-            title: 'Jour 2 - Procédures de Dédouanement',
-            date: '2026-08-15',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Fiscalite_Module2_Jour2.pdf',
-            pdfTextSnippet: 'Le dédouanement informatisé permet l émission du Bon à Enlever. Les infractions douanières relèvent du code des douanes.',
-            quiz: createSampleQuiz('q-102-2', 'Quiz - Procédures & Contentieux Douanier', 'Fiscalité Douanière'),
-            isQuizReady: true,
-            status: 'ready'
-          }
-        ]
-      },
-      {
-        id: 'mod-3',
-        code: 'MOD-103',
-        title: 'Contrats Administratifs, Marchés Publics & GRH',
-        description: 'Droit administratif des contrats, principes de mise en concurrence et gestion statutaire du personnel public.',
-        sessions: [
-          {
-            id: 'sess-103-1',
-            moduleId: 'mod-3',
-            moduleTitle: 'Contrats Administratifs & GRH',
-            title: 'Jour 1 - Passation des Marchés Publics',
-            date: '2026-08-16',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_DroitAdmin_Module3_Jour1.pdf',
-            pdfTextSnippet: 'Les marchés publics respectent la liberté d accès, l égalité de traitement des candidats et la transparence des procédures.',
-            quiz: createSampleQuiz('q-103-1', 'Quiz - Marchés Publics & Commande Publique', 'Droit Administratif'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-103-2',
-            moduleId: 'mod-3',
-            moduleTitle: 'Contrats Administratifs & GRH',
-            title: 'Jour 2 - Gestion des Ressources Humaines publiques',
-            date: '2026-08-17',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_GRH_Module3_Jour2.pdf',
-            pdfTextSnippet: 'Le statut général de la fonction publique protège le fonctionnaire contre les pressions politiques et garantit sa carrière.',
-            quiz: createSampleQuiz('q-103-2', 'Quiz - GRH et Statut de la Fonction Publique', 'GRH Publique'),
-            isQuizReady: true,
-            status: 'ready'
-          }
-        ]
-      },
-      {
-        id: 'mod-4',
-        code: 'MOD-104',
-        title: 'Géopolitique & Diplomatie Contemporaine',
-        description: 'Organisations régionales, diplomatie multilatérale, droit de la mer et règlement pacifique des différends.',
-        sessions: [
-          {
-            id: 'sess-104-1',
-            moduleId: 'mod-4',
-            moduleTitle: 'Géopolitique & Diplomatie',
-            title: 'Jour 1 - Organisations Régionales & Gouvernance',
-            date: '2026-08-18',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Geopolitique_Module4_Jour1.pdf',
-            pdfTextSnippet: 'Les organisations régionales complètent l action de l ONU. L Union Africaine et l Union Européenne constituent des modèles d intégration.',
-            quiz: createSampleQuiz('q-104-1', 'Quiz - Organisations & Multilatéralisme', 'Géopolitique'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-104-2',
-            moduleId: 'mod-4',
-            moduleTitle: 'Géopolitique & Diplomatie',
-            title: 'Jour 2 - Arbitrage & Règlement des Différends',
-            date: '2026-08-19',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Diplomatie_Module4_Jour2.pdf',
-            pdfTextSnippet: 'L article 33 de la Charte des Nations Unies énumère les modes de règlement pacifique : négociation, enquête, médiation, conciliation, arbitrage.',
-            quiz: createSampleQuiz('q-104-2', 'Quiz - Différends & Arbitrage International', 'Diplomatie'),
-            isQuizReady: true,
-            status: 'ready'
-          }
-        ]
-      },
-      {
-        id: 'mod-5',
-        code: 'MOD-105',
-        title: 'Finances Publiques & Économie Internationale',
-        description: 'Élaboration du budget, lois de finances, système de Bretton Woods et dette souveraine.',
-        sessions: [
-          {
-            id: 'sess-105-1',
-            moduleId: 'mod-5',
-            moduleTitle: 'Finances Publiques & Économie',
-            title: 'Jour 1 - Lois de Finances & Principes Budgétaires',
-            date: '2026-08-20',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Finances_Module5_Jour1.pdf',
-            pdfTextSnippet: 'Les grands principes budgétaires sont l unité, l universalité, l annuité, la spécialité et la sincérité budgétaire.',
-            quiz: createSampleQuiz('q-105-1', 'Quiz - Principes Budgétaires & Lois de Finances', 'Finances Publiques'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-105-2',
-            moduleId: 'mod-5',
-            moduleTitle: 'Finances Publiques & Économie',
-            title: 'Jour 2 - FMI, Banque Mondiale & Stabilisation',
-            date: '2026-08-21',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Economie_Module5_Jour2.pdf',
-            pdfTextSnippet: 'Le FMI veille à la stabilité du système monétaire international tandis que la Banque Mondiale finance les projets de développement à long terme.',
-            quiz: createSampleQuiz('q-105-2', 'Quiz - Institutions Financières Internationales', 'Économie Internationale'),
-            isQuizReady: true,
-            status: 'ready'
-          }
-        ]
-      },
-      {
-        id: 'mod-6',
-        code: 'MOD-106',
-        title: 'Grandes Synthèses & Oral de Diplôme',
-        description: 'Cas pratiques transversaux, préparation aux épreuves orales et examen d assimilation générale.',
-        sessions: [
-          {
-            id: 'sess-106-1',
-            moduleId: 'mod-6',
-            moduleTitle: 'Grandes Synthèses & Oral',
-            title: 'Jour 1 - Cas Pratiques Transversaux',
-            date: '2026-08-23',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Synthese_Module6_Jour1.pdf',
-            pdfTextSnippet: 'L examen oral évalue la maîtrise synthétique du droit public, des RI et des finances.',
-            quiz: createSampleQuiz('q-106-1', 'Quiz - Synthèse Globale RI & Droit', 'Synthèse Générale'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-106-2',
-            moduleId: 'mod-6',
-            moduleTitle: 'Grandes Synthèses & Oral',
-            title: 'Jour 2 - Examen Blanc Final',
-            date: '2026-08-24',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_ExamenBlanc_Module6_Jour2.pdf',
-            pdfTextSnippet: 'Test général de validation.',
-            quiz: createSampleQuiz('q-106-2', 'Quiz - Examen Blanc Officiel', 'Examen Blanc'),
-            isQuizReady: true,
-            status: 'ready'
-          },
-          {
-            id: 'sess-106-3',
-            moduleId: 'mod-6',
-            moduleTitle: 'Grandes Synthèses & Oral',
-            title: 'Jour 3 - Clôture du Programme',
-            date: '2026-08-25',
-            startTime: '15:00',
-            endTime: '16:00',
-            pdfFileName: 'Cours_Cloture_Module6_Jour3.pdf',
-            pdfTextSnippet: 'Évaluation finale du diplôme Team Diplôme.',
-            quiz: createSampleQuiz('q-106-3', 'Quiz de Clôture Générale', 'Clôture Diplôme'),
-            isQuizReady: true,
-            status: 'ready'
-          }
-        ]
-      }
-    ];
-
-    // 3. Seed student submissions for past days (e.g. 12/08/2026, 13/08/2026) to make Admin Analytics super rich!
-    // -> RESET TO ZERO AS REQUESTED: No submissions seeded.
-    /*
-    const students = this.users.filter(u => u.role === 'student');
-    const pastSessions = [
-      { sess: this.modules[0].sessions[0], date: '2026-08-12' },
-      { sess: this.modules[0].sessions[1], date: '2026-08-13' },
-      { sess: this.modules[1].sessions[0], date: '2026-08-14' }
-    ];
-    ...
-    */
+    this.modules = [];
+    this.submissions = [];
   }
 
   private addSeedSubmission(
@@ -509,6 +222,20 @@ class DatabaseStore {
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
     };
     this.users.push(newUser);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('profiles').upsert({
+        id: newUser.id,
+        email: newUser.email,
+        full_name: newUser.name,
+        role: newUser.role,
+        avatar: newUser.avatar
+      }).then(({ error }) => {
+        if (error) console.error('Erreur Supabase profile upsert :', error.message);
+      });
+    }
+
     return newUser;
   }
 
@@ -539,6 +266,19 @@ class DatabaseStore {
       sessions: []
     };
     this.modules.push(newModule);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('modules').insert({
+        id: newModule.id,
+        code: newModule.code,
+        title: newModule.title,
+        description: newModule.description
+      }).then(({ error }) => {
+        if (error) console.error('Erreur Supabase createModule :', error.message);
+      });
+    }
+
     return newModule;
   }
 
@@ -571,6 +311,26 @@ class DatabaseStore {
     };
 
     mod.sessions.push(newSession);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('sessions').insert({
+        id: newSession.id,
+        module_id: moduleId,
+        module_title: mod.title,
+        title: newSession.title,
+        date: newSession.date,
+        start_time: newSession.startTime,
+        end_time: newSession.endTime,
+        pdf_file_name: newSession.pdfFileName,
+        pdf_text_snippet: newSession.pdfTextSnippet,
+        is_quiz_ready: newSession.isQuizReady,
+        status: newSession.status
+      }).then(({ error }) => {
+        if (error) console.error('Erreur Supabase createSession :', error.message);
+      });
+    }
+
     return newSession;
   }
 
@@ -580,12 +340,29 @@ class DatabaseStore {
     found.session.quiz = quiz;
     found.session.isQuizReady = true;
     found.session.status = 'ready';
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('sessions').update({
+        quiz,
+        is_quiz_ready: true,
+        status: 'ready'
+      }).eq('id', sessionId).then(({ error }) => {
+        if (error) console.error('Erreur Supabase setSessionQuiz :', error.message);
+      });
+    }
   }
 
   public updateSessionStatus(sessionId: string, status: 'pending' | 'generating' | 'ready' | 'error') {
     const found = this.getSessionById(sessionId);
     if (found) {
       found.session.status = status;
+      const supabase = getSupabaseServer();
+      if (supabase) {
+        supabase.from('sessions').update({ status }).eq('id', sessionId).then(({ error }) => {
+          if (error) console.error('Erreur Supabase updateSessionStatus :', error.message);
+        });
+      }
     }
   }
 
@@ -643,6 +420,28 @@ class DatabaseStore {
     };
 
     this.submissions.push(newSub);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('submissions').insert({
+        id: newSub.id,
+        session_id: newSub.sessionId,
+        student_id: newSub.studentId,
+        student_name: newSub.studentName,
+        student_email: newSub.studentEmail,
+        answers: newSub.answers,
+        base_score: newSub.baseScore,
+        adjustment: newSub.adjustment,
+        final_score: newSub.finalScore,
+        is_validated: newSub.isValidated,
+        is_late: newSub.isLate,
+        late_days: newSub.lateDays,
+        submitted_at: newSub.submittedAt
+      }).then(({ error }) => {
+        if (error) console.error('Erreur Supabase submitQuiz :', error.message);
+      });
+    }
+
     return newSub;
   }
 
@@ -805,6 +604,82 @@ class DatabaseStore {
       studentProgressList,
       frequentLateSubmitters
     };
+  }
+
+  public deleteModule(moduleId: string) {
+    const modIndex = this.modules.findIndex(m => m.id === moduleId);
+    if (modIndex === -1) {
+      throw new Error("Module introuvable.");
+    }
+    const mod = this.modules[modIndex];
+    const sessionIds = mod.sessions.map(s => s.id);
+    
+    // Remove submissions for these sessions
+    this.submissions = this.submissions.filter(sub => !sessionIds.includes(sub.sessionId));
+
+    // Remove module
+    this.modules.splice(modIndex, 1);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('sessions').delete().eq('module_id', moduleId).then(() => {
+        supabase.from('modules').delete().eq('id', moduleId).then(({ error }) => {
+          if (error) console.error('Erreur Supabase deleteModule :', error.message);
+        });
+      });
+    }
+  }
+
+  public deleteSession(sessionId: string) {
+    let found = false;
+    for (const mod of this.modules) {
+      const idx = mod.sessions.findIndex(s => s.id === sessionId);
+      if (idx !== -1) {
+        mod.sessions.splice(idx, 1);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      throw new Error("Session introuvable.");
+    }
+
+    // Remove submissions for this session
+    this.submissions = this.submissions.filter(sub => sub.sessionId !== sessionId);
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      supabase.from('sessions').delete().eq('id', sessionId).then(({ error }) => {
+        if (error) console.error('Erreur Supabase deleteSession :', error.message);
+      });
+    }
+  }
+
+  public async resetAllData() {
+    this.modules = [];
+    this.submissions = [];
+    // Keep admin user only
+    this.users = [
+      {
+        id: 'u-admin',
+        email: 'admin@teamdiplome.com',
+        name: 'Prof. Alexandre Vance',
+        role: 'admin',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+      }
+    ];
+
+    const supabase = getSupabaseServer();
+    if (supabase) {
+      try {
+        await supabase.from('submissions').delete().neq('id', '0');
+        await supabase.from('sessions').delete().neq('id', '0');
+        await supabase.from('modules').delete().neq('id', '0');
+        await supabase.from('profiles').delete().neq('role', 'admin');
+      } catch (err) {
+        console.warn('Erreur lors du nettoyage de Supabase :', err);
+      }
+    }
   }
 }
 
