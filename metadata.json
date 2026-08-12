@@ -1,0 +1,6 @@
+{
+  "name": "Team Diplôme – Quiz RI & Modules",
+  "description": "Plateforme de révision collaborative et quiz automatisés avec IA pour les Relations Internationales, Droit et Fiscalité avec suivi de progression et dashboard admin.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
