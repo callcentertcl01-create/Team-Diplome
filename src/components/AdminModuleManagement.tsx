@@ -18,9 +18,10 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
   const [isCreatingModule, setIsCreatingModule] = useState(false);
 
   // New Session Form State
+  const todayDefault = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
   const [selectedModuleId, setSelectedModuleId] = useState<string>(modules[0]?.id || '');
   const [sessionTitle, setSessionTitle] = useState('');
-  const [sessionDate, setSessionDate] = useState('2026-08-18');
+  const [sessionDate, setSessionDate] = useState(todayDefault);
   const [sessionStartTime, setSessionStartTime] = useState('15:00');
   const [sessionEndTime, setSessionEndTime] = useState('16:00');
   const [pdfFileName, setPdfFileName] = useState('');
@@ -34,30 +35,26 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handleDeleteModule = async (moduleId: string, moduleTitle: string) => {
-    if (window.confirm(`Voulez-vous vraiment supprimer le module "${moduleTitle}" et toutes ses sessions ?`)) {
-      try {
-        const res = await fetch(`/api/modules/${moduleId}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression du module.");
-        setMessage({ type: 'success', text: `Module "${moduleTitle}" supprimé avec succès.` });
-        onRefresh();
-      } catch (err: any) {
-        setMessage({ type: 'error', text: err.message });
-      }
+    try {
+      const res = await fetch(`/api/modules/${moduleId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression du module.");
+      setMessage({ type: 'success', text: `Module "${moduleTitle}" supprimé avec succès.` });
+      onRefresh();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
     }
   };
 
   const handleDeleteSession = async (sessionId: string, sessionTitle: string) => {
-    if (window.confirm(`Voulez-vous vraiment supprimer la session "${sessionTitle}" ?`)) {
-      try {
-        const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression de la session.");
-        setMessage({ type: 'success', text: `Session "${sessionTitle}" supprimée.` });
-        onRefresh();
-      } catch (err: any) {
-        setMessage({ type: 'error', text: err.message });
-      }
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression de la session.");
+      setMessage({ type: 'success', text: `Session "${sessionTitle}" supprimée.` });
+      onRefresh();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
     }
   };
 

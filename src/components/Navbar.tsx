@@ -41,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   TEAM DIPLÔME <span className="font-light text-slate-400">| Quiz RI</span>
                 </span>
                 <span className="px-1.5 py-0.5 text-[8px] uppercase tracking-widest font-bold bg-slate-100 text-slate-600 border border-slate-200 rounded-full">
-                  11–25 AOUT 2026
+                  SESSION EN COURS
                 </span>
               </div>
               <p className="text-[9px] text-slate-400 uppercase tracking-wider hidden sm:block font-medium leading-none mt-0.5">
@@ -158,18 +158,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
 
                   <div className="pt-2 pb-1 space-y-1">
-                    {!isAdmin && (
-                      <button
-                        onClick={() => {
-                          setShowUserDropdown(false);
-                          onOpenAdminLogin();
-                        }}
-                        className="w-full text-left px-3 py-2 text-xs text-slate-600 font-bold hover:bg-slate-50 rounded-xl flex items-center gap-2 transition-colors uppercase tracking-wider"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        Connexion Admin
-                      </button>
-                    )}
                     <button
                       onClick={() => {
                         setShowUserDropdown(false);

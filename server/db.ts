@@ -9,14 +9,19 @@ class DatabaseStore {
   private submissions: Submission[] = [];
   private isSyncedWithSupabase = false;
 
+  private isSyncing = false;
+
   constructor() {
     this.seedInitialData();
-    this.initSupabaseSync();
+    this.syncFromSupabase();
   }
 
-  private async initSupabaseSync() {
+  public async syncFromSupabase() {
     const supabase = getSupabaseServer();
     if (!supabase) return;
+    
+    if (this.isSyncing) return;
+    this.isSyncing = true;
 
     try {
       // 1. Fetch Users / Profiles from Supabase
@@ -102,6 +107,8 @@ class DatabaseStore {
       console.log('✅ Synchronisation BDD Supabase achevée.');
     } catch (err) {
       console.warn('⚠️ Impossible de synchroniser avec la BDD Supabase (Mode In-Memory maintenu) :', err);
+    } finally {
+      this.isSyncing = false;
     }
   }
 
@@ -137,8 +144,6 @@ class DatabaseStore {
   }
 
   private seedInitialData() {
-    // Starting completely from scratch: zero mock students, zero modules, zero submissions.
-    // Default admin retained so administrator can log in.
     this.users = [
       {
         id: 'u-admin',
@@ -149,7 +154,149 @@ class DatabaseStore {
       }
     ];
 
-    this.modules = [];
+    this.modules = [
+      {
+        id: 'mod-1',
+        code: 'RI-101',
+        title: 'Théories et doctrines des relations internationales',
+        description: 'Analyse des grands courants théoriques des relations internationales : réalisme, libéralisme, constructivisme.',
+        sessions: [
+          {
+            id: 'sess-1',
+            moduleId: 'mod-1',
+            moduleTitle: 'Théories et doctrines des relations internationales',
+            title: 'Introduction aux Relations Internationales & Réalisme',
+            date: '2026-08-11',
+            startTime: '15:00',
+            endTime: '16:00',
+            pdfFileName: 'Cours_RI101_Jour1_Realisme.pdf',
+            pdfTextSnippet: 'Le réalisme politique en relations internationales insiste sur l anomie du système international, l importance de l État-nation et la recherche de la puissance...',
+            isQuizReady: true,
+            status: 'completed',
+            quiz: {
+              id: 'quiz-sess-1',
+              title: 'Quiz Jour 1 - Réalisme politique',
+              questions: [
+                {
+                  id: 1,
+                  question: "Selon la théorie réaliste des relations internationales, quel est l'acteur principal du système international ?",
+                  choices: [
+                    "Les organisations non gouvernementales (ONG)",
+                    "L'État souverain",
+                    "Les firmes multinationales",
+                    "Les institutions supranationales"
+                  ],
+                  correctAnswer: 1,
+                  explanation: "Pour les réalistes, l'État souverain est l'acteur central et le principal sujet du système international."
+                },
+                {
+                  id: 2,
+                  question: "Que désigne le concept de 'dilemme de sécurité' ?",
+                  choices: [
+                    "L'impossibilité d'établir une armée permanente",
+                    "Le fait que le renforcement de la sécurité d'un État accroît le sentiment d'insécurité des autres",
+                    "L'absence totale de traité de paix entre voisins",
+                    "La dépendance exclusive envers les alliances économiques"
+                  ],
+                  correctAnswer: 1,
+                  explanation: "Le dilemme de sécurité explique comment des actions purement défensives peuvent susciter des craintes chez les voisins."
+                }
+              ]
+            }
+          },
+          {
+            id: 'sess-2',
+            moduleId: 'mod-1',
+            moduleTitle: 'Théories et doctrines des relations internationales',
+            title: 'Le Libéralisme et le Constructivisme dans les RI',
+            date: '2026-08-12',
+            startTime: '15:00',
+            endTime: '16:00',
+            pdfFileName: 'Cours_RI101_Jour2_Liberalisme_Constructivisme.pdf',
+            pdfTextSnippet: 'Le libéralisme met en avant l interdépendance économique et le rôle des institutions internationales. Le constructivisme (Wendt) montre que la réalité internationale est socialement construite...',
+            isQuizReady: true,
+            status: 'active',
+            quiz: {
+              id: 'quiz-sess-2',
+              title: 'Quiz Jour 2 - Libéralisme et Constructivisme',
+              questions: [
+                {
+                  id: 1,
+                  question: "Selon la théorie libérale, quel facteur favorise principalement la paix entre les nations ?",
+                  choices: [
+                    "La course aux armements nucléaires",
+                    "L'interdépendance économique et les institutions internationales",
+                    "L'isolement diplomatique strict",
+                    "L'absence totale de droit international"
+                  ],
+                  correctAnswer: 1,
+                  explanation: "L'interdépendance économique et les organisations internationales favorisent la coopération et réduisent les risques de conflit."
+                },
+                {
+                  id: 2,
+                  question: "Quelle est la citation célèbre d'Alexander Wendt illustrant la posture constructiviste ?",
+                  choices: [
+                    "La guerre est la poursuite de la politique par d'autres moyens",
+                    "L'anarchie est ce que les États en font",
+                    "L'homme est un loup pour l'homme",
+                    "La fin justifies les moyens"
+                  ],
+                  correctAnswer: 1,
+                  explanation: "Alexander Wendt résume le constructivisme par 'Anarchy is what states make of it'."
+                },
+                {
+                  id: 3,
+                  question: "Comment le constructivisme appréhende-t-il les identités et intérêts des États ?",
+                  choices: [
+                    "Comme des données fixes imposées par la géographie",
+                    "Comme des constructions sociales évolutives façonnées par les interactions et normes",
+                    "Comme de simples produits du calcul économique individuel",
+                    "Comme des éléments totalement secondaires sans impact réel"
+                  ],
+                  correctAnswer: 1,
+                  explanation: "Les constructivistes montrent que les identités et intérêts sont façonnés par les règles et valeurs partagées."
+                }
+              ]
+            }
+          },
+          {
+            id: 'sess-3',
+            moduleId: 'mod-1',
+            moduleTitle: 'Théories et doctrines des relations internationales',
+            title: 'Les Théories Critiques et l\'Analyse des Politiques Étrangères',
+            date: '2026-08-13',
+            startTime: '15:00',
+            endTime: '16:00',
+            pdfFileName: 'Cours_RI101_Jour3_TheoriesCritiques.pdf',
+            pdfTextSnippet: 'Examen des théories néo-marxistes, de la théorie de la dépendance et du féminisme dans les relations internationales...',
+            isQuizReady: false,
+            status: 'pending'
+          }
+        ]
+      },
+      {
+        id: 'mod-2',
+        code: 'RI-102',
+        title: 'Droit International Public et Organisations',
+        description: 'Étude des traités, de la coutume internationale, du rôle de l ONU et des juridictions internationales.',
+        sessions: [
+          {
+            id: 'sess-4',
+            moduleId: 'mod-2',
+            moduleTitle: 'Droit International Public et Organisations',
+            title: 'Les Sources du Droit International et la Charte des Nations Unies',
+            date: '2026-08-14',
+            startTime: '15:00',
+            endTime: '16:00',
+            pdfFileName: 'Cours_RI102_Jour4_DroitInt.pdf',
+            pdfTextSnippet: 'L article 38 du Statut de la CIJ énumère les sources du droit international : conventions, coutumes, principes généraux du droit...',
+            isQuizReady: false,
+            status: 'pending'
+          }
+        ]
+      }
+    ];
+
     this.submissions = [];
   }
 

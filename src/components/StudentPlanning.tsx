@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Module, Session, Submission, User } from '../types';
-import { BookOpen, Calendar, Clock, FileText, CheckCircle2, AlertTriangle, Play, Sparkles, ChevronRight, Award, Bell, Lock } from 'lucide-react';
+import { BookOpen, Calendar, Clock, FileText, CheckCircle2, AlertTriangle, AlertCircle, Play, Sparkles, ChevronRight, Award, Bell, Lock } from 'lucide-react';
 
 interface StudentPlanningProps {
   modules: Module[];
@@ -56,43 +56,51 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
               Planning des Quiz « Team Diplôme »
             </h1>
             <p className="text-sm text-slate-700 max-w-2xl leading-relaxed">
-              Consultez vos cours PDF, respectez le créneau quotidien de <strong className="text-slate-900">15h00 – 16h00</strong> et cumulez le <strong className="text-emerald-400">bonus de +2 points</strong> à chaque soumission ponctuelle.
+              {currentUser.role === 'admin' ? (
+                "Vue globale de tous les modules et sessions programmés. Les étudiants verront leurs statistiques personnelles ici."
+              ) : (
+                <>Consultez vos cours PDF, respectez le créneau quotidien de <strong className="text-slate-900">15h00 – 16h00</strong> et cumulez le <strong className="text-emerald-400">bonus de +2 points</strong> à chaque soumission ponctuelle.</>
+              )}
             </p>
           </div>
 
           {/* Quick Stats Widget */}
-          <div className="flex items-center gap-4 bg-white/90 p-4 rounded-2xl border border-slate-300 self-start md:self-auto">
-            <div className="text-center px-2">
-              <div className="text-xl font-extrabold text-slate-900">
-                {studentSubmissions.length} / {allSessions.length}
+          {currentUser.role !== 'admin' && (
+            <div className="flex items-center gap-4 bg-white/90 p-4 rounded-2xl border border-slate-300 self-start md:self-auto">
+              <div className="text-center px-2">
+                <div className="text-xl font-extrabold text-slate-900">
+                  {studentSubmissions.length} / {allSessions.length}
+                </div>
+                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Quiz Remplis</div>
               </div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Quiz Remplis</div>
-            </div>
-            <div className="w-px h-8 bg-slate-700" />
-            <div className="text-center px-2">
-              <div className="text-xl font-extrabold text-emerald-400">
-                {studentSubmissions.filter(s => s.isValidated).length}
+              <div className="w-px h-8 bg-slate-700" />
+              <div className="text-center px-2">
+                <div className="text-xl font-extrabold text-emerald-400">
+                  {studentSubmissions.filter(s => s.isValidated).length}
+                </div>
+                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Modules Validés</div>
               </div>
-              <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Modules Validés</div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Bonus / Malus Rules Summary Strip */}
-        <div className="mt-6 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="flex items-center gap-2 text-emerald-300 bg-emerald-500/10 px-3 py-2 rounded-2xl border border-emerald-500/30 font-semibold">
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-            <span><strong>Bonus +2 pts</strong> : Soumission avant 16h00 le jour J</span>
+        {currentUser.role !== 'admin' && (
+          <div className="mt-6 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="flex items-center gap-2 text-emerald-300 bg-emerald-500/10 px-3 py-2 rounded-2xl border border-emerald-500/30 font-semibold">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <span><strong>Bonus +2 pts</strong> : Soumission avant 16h00 le jour J</span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-800 bg-slate-100 px-3 py-2 rounded-2xl border border-slate-200 font-semibold">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-slate-900" />
+              <span><strong>Malus -1 pt</strong> : Soumission le jour J après 16h00</span>
+            </div>
+            <div className="flex items-center gap-2 text-rose-300 bg-rose-500/10 px-3 py-2 rounded-2xl border border-rose-500/30 font-semibold">
+              <Clock className="w-4 h-4 shrink-0 text-rose-400" />
+              <span><strong>Malus additionnel</strong> : -1 pt / jour calendaire de retard</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-slate-800 bg-slate-100 px-3 py-2 rounded-2xl border border-slate-200 font-semibold">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-slate-900" />
-            <span><strong>Malus -1 pt</strong> : Soumission le jour J après 16h00</span>
-          </div>
-          <div className="flex items-center gap-2 text-rose-300 bg-rose-500/10 px-3 py-2 rounded-2xl border border-rose-500/30 font-semibold">
-            <Clock className="w-4 h-4 shrink-0 text-rose-400" />
-            <span><strong>Malus additionnel</strong> : -1 pt / jour calendaire de retard</span>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Module Filter Tabs */}
@@ -140,9 +148,14 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
 
         {filteredSessions.map(({ session, module }) => {
           const submission = getSubmissionForSession(session.id);
-          const [year, month, day] = session.date.split('-');
-          const formattedDate = `${day}/${month}/${year}`;
-          const isToday = session.date === todayStr;
+          const cleanDate = session.date ? session.date.split('T')[0] : todayStr;
+          const [year, month, day] = cleanDate.split('-');
+          const formattedDate = (year && month && day) ? `${day}/${month}/${year}` : cleanDate;
+
+          const isToday = cleanDate === todayStr;
+          const isFuture = cleanDate > todayStr;
+          const isPast = cleanDate < todayStr;
+          const hasQuiz = session.isQuizReady || (!!session.quiz && Array.isArray(session.quiz.questions) && session.quiz.questions.length > 0);
 
           return (
             <div
@@ -150,9 +163,9 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
               className={`bg-white rounded-2xl border transition-all p-5 ${
                 submission
                   ? 'border-emerald-500/50 border-l-4 border-l-emerald-500'
-                  : !isToday
+                  : isFuture
                   ? 'border-amber-300/80 border-l-4 border-l-amber-500 bg-slate-50/50'
-                  : session.isQuizReady
+                  : isToday && session.isQuizReady
                   ? 'border-slate-900/60 border-l-4 border-l-slate-900'
                   : 'border-slate-200 border-l-4 border-l-slate-700'
               }`}
@@ -166,7 +179,9 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                       {module.code}
                     </span>
                     <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-xl border ${
-                      isToday ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-extrabold' : 'bg-white/80 text-slate-700 border-slate-200'
+                      isToday
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-extrabold'
+                        : 'bg-white/80 text-slate-700 border-slate-200'
                     }`}>
                       <Calendar className="w-3.5 h-3.5 text-slate-900" />
                       {formattedDate} {isToday && '• Aujourd\'hui'}
@@ -181,14 +196,19 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                         Quiz Déjà Soumis
                       </span>
-                    ) : !isToday ? (
+                    ) : isFuture ? (
                       <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider">
                         <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>Vérouillé (Prévu le {formattedDate})</span>
+                        <span>Verrouillé (Prévu le {formattedDate})</span>
                       </span>
-                    ) : session.isQuizReady ? (
-                      <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 border border-slate-900/40 text-xs font-bold uppercase tracking-wider animate-pulse">
-                        Quiz Ouvert (Prêt)
+                    ) : isPast && hasQuiz ? (
+                      <span className="px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 border border-amber-400 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span>Rattrapage (En retard)</span>
+                      </span>
+                    ) : isToday && hasQuiz ? (
+                      <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white border border-slate-900 text-xs font-bold uppercase tracking-wider animate-pulse">
+                        Quiz Ouvert (Jour J)
                       </span>
                     ) : (
                       <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-400 text-xs font-medium uppercase tracking-wider">
@@ -222,7 +242,13 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                   )}
 
                   {/* Submission Result OR Start Quiz Button */}
-                  {submission ? (
+                  {currentUser.role === 'admin' ? (
+                    <div className="flex items-center gap-2">
+                      <div className="px-3.5 py-2 rounded-2xl bg-slate-100 border border-slate-200 text-slate-500 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                        {session.isQuizReady ? 'Quiz Ouvert' : 'Quiz en attente IA'}
+                      </div>
+                    </div>
+                  ) : submission ? (
                     <div className="flex items-center gap-3">
                       <div className="text-right">
                         <div className="text-sm font-extrabold text-slate-900 flex items-center justify-end gap-1">
@@ -246,7 +272,7 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                         <ChevronRight className="w-4 h-4" />
                       </button>
                     </div>
-                  ) : !isToday ? (
+                  ) : isFuture ? (
                     <div className="relative flex items-center gap-2">
                       <button
                         disabled
@@ -257,21 +283,34 @@ export const StudentPlanning: React.FC<StudentPlanningProps> = ({
                       </button>
                       <span className="flex items-center gap-1 text-[11px] font-black uppercase text-slate-800 bg-amber-100 px-2.5 py-1 rounded-xl shadow-sm border border-amber-300">
                         <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>Vérouillé</span>
+                        <span>Verrouillé</span>
                       </span>
                     </div>
+                  ) : isPast ? (
+                    <button
+                      onClick={() => onStartQuiz(session)}
+                      disabled={!hasQuiz}
+                      className={`px-5 py-2 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all ${
+                        hasQuiz
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white active:scale-95 cursor-pointer'
+                          : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-300'
+                      }`}
+                    >
+                      <Play className="w-4 h-4 fill-current text-white" />
+                      {hasQuiz ? 'Rattraper le Quiz (-1pt/j)' : 'Quiz non prêt'}
+                    </button>
                   ) : (
                     <button
                       onClick={() => onStartQuiz(session)}
-                      disabled={!session.isQuizReady}
+                      disabled={!hasQuiz}
                       className={`px-5 py-2 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all ${
-                        session.isQuizReady
+                        hasQuiz
                           ? 'bg-slate-900 text-white hover:bg-slate-800 active:scale-95 cursor-pointer'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-300'
                       }`}
                     >
                       <Play className="w-4 h-4 fill-current text-white" />
-                      {session.isQuizReady ? 'Passer le Quiz' : 'Quiz non prêt'}
+                      {hasQuiz ? 'Passer le Quiz' : 'Quiz non prêt'}
                     </button>
                   )}
 

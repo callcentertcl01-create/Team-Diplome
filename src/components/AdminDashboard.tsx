@@ -22,18 +22,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'modules' | 'punctuality'>('overview');
 
   const handleResetDatabase = async () => {
-    if (window.confirm("Êtes-vous sûr de vouloir tout réinitialiser à zéro (suppression de tous les modules, quiz et soumissions) ?")) {
-      try {
-        const res = await fetch('/api/admin/reset-database', { method: 'POST' });
-        if (res.ok) {
-          alert("Toutes les données ont été réinitialisées à zéro.");
-          onRefresh();
-        } else {
-          alert("Erreur lors de la réinitialisation.");
-        }
-      } catch (err) {
-        alert("Erreur réseau lors de la réinitialisation.");
+    try {
+      const res = await fetch('/api/admin/reset-database', { method: 'POST' });
+      if (res.ok) {
+        onRefresh();
       }
+    } catch (err) {
+      console.error("Erreur réinitialisation :", err);
     }
   };
 

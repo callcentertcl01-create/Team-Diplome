@@ -27,7 +27,9 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const isToday = session.date === todayStr;
+  const cleanSessionDate = session.date ? session.date.split('T')[0] : todayStr;
+  const isToday = cleanSessionDate === todayStr;
+  const isFuture = cleanSessionDate > todayStr;
 
   // Countdown timer effect
   useEffect(() => {
@@ -59,14 +61,6 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
   };
 
   const handleSubmitQuiz = async () => {
-    // Check if all questions are answered
-    const unanswered = userAnswers.filter(a => a === -1).length;
-    if (unanswered > 0) {
-      if (!window.confirm(`Il reste ${unanswered} question(s) sans réponse. Voulez-vous vraiment soumettre votre quiz ?`)) {
-        return;
-      }
-    }
-
     setIsSubmitting(true);
     setErrorMessage(null);
 
@@ -94,8 +88,8 @@ export const QuizArena: React.FC<QuizArenaProps> = ({
     }
   };
 
-  // Block quiz if not scheduled for today
-  if (!isToday && !submissionResult) {
+  // Block quiz only if scheduled for a future date
+  if (isFuture && !submissionResult) {
     return (
       <div className="bg-white border-2 border-slate-200 border-l-4 border-l-amber-500 rounded-2xl p-8 text-center space-y-4 shadow-md max-w-2xl mx-auto">
         <div className="w-16 h-16 bg-amber-50 rounded-2xl border border-amber-300 flex items-center justify-center mx-auto shadow-sm">
