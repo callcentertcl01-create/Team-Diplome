@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Module, Session } from '../types';
-import { Plus, Sparkles, FileText, Upload, RefreshCw, CheckCircle2, AlertCircle, BookOpen, Clock, Calendar } from 'lucide-react';
+import { Plus, Sparkles, FileText, Upload, RefreshCw, CheckCircle2, AlertCircle, BookOpen, Clock, Calendar, Trash2 } from 'lucide-react';
 
 interface AdminModuleManagementProps {
   modules: Module[];
@@ -18,9 +18,10 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
   const [isCreatingModule, setIsCreatingModule] = useState(false);
 
   // New Session Form State
+  const todayDefault = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
   const [selectedModuleId, setSelectedModuleId] = useState<string>(modules[0]?.id || '');
   const [sessionTitle, setSessionTitle] = useState('');
-  const [sessionDate, setSessionDate] = useState('2026-08-18');
+  const [sessionDate, setSessionDate] = useState(todayDefault);
   const [sessionStartTime, setSessionStartTime] = useState('15:00');
   const [sessionEndTime, setSessionEndTime] = useState('16:00');
   const [pdfFileName, setPdfFileName] = useState('');
@@ -32,6 +33,30 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
   const [aiTextInputs, setAiTextInputs] = useState<Record<string, string>>({});
 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleDeleteModule = async (moduleId: string, moduleTitle: string) => {
+    try {
+      const res = await fetch(`/api/modules/${moduleId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression du module.");
+      setMessage({ type: 'success', text: `Module "${moduleTitle}" supprimé avec succès.` });
+      onRefresh();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string, sessionTitle: string) => {
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur lors de la suppression de la session.");
+      setMessage({ type: 'success', text: `Session "${sessionTitle}" supprimée.` });
+      onRefresh();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    }
+  };
 
   const handleCreateModule = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -321,7 +346,7 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
             <button
               type="submit"
               disabled={isCreatingSession || generatingSessionId !== null}
-              className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-[#0f172a] font-black text-xs uppercase tracking-wider shadow-md flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               {generatingSessionId !== null ? (
                 <>
@@ -357,7 +382,17 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
                   </span>
                   <span className="font-bold text-slate-900 text-sm uppercase tracking-tight">{mod.title}</span>
                 </div>
-                <span className="text-xs text-slate-400 font-medium">{mod.sessions.length} session(s)</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400 font-medium">{mod.sessions.length} session(s)</span>
+                  <button
+                    onClick={() => handleDeleteModule(mod.id, mod.title)}
+                    className="px-2.5 py-1 bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer border border-rose-200"
+                    title="Supprimer ce module"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Supprimer Module
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -365,7 +400,16 @@ export const AdminModuleManagement: React.FC<AdminModuleManagementProps> = ({
                   <div key={sess.id} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-900">{sess.title}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{sess.date}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-mono">{sess.date}</span>
+                        <button
+                          onClick={() => handleDeleteSession(sess.id, sess.title)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Supprimer cette session"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px]">

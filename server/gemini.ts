@@ -19,38 +19,58 @@ export async function generateQuizFromText(pdfOrCourseText: string) {
 
   const prompt = `Texte du cours à analyser pour générer le quiz :\n\n${pdfOrCourseText.substring(0, 15000)}`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      systemInstruction,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          questions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                question: { type: Type.STRING },
-                choices: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-                correctAnswer: { type: Type.INTEGER, description: "Index de 0 à 3" },
-                explanation: { type: Type.STRING },
+  const config = {
+    systemInstruction,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        questions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              choices: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
               },
-              required: ["question", "choices", "correctAnswer"],
+              correctAnswer: { type: Type.INTEGER, description: "Index de 0 à 3" },
+              explanation: { type: Type.STRING },
             },
+            required: ["question", "choices", "correctAnswer"],
           },
         },
-        required: ["questions"],
       },
+      required: ["questions"],
     },
-  });
+  };
 
-  const responseText = response.text;
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: prompt,
+      config,
+    });
+  } catch (error: any) {
+    if (error?.status === 503 || error?.message?.includes('503') || error?.message?.includes('UNAVAILABLE')) {
+      console.warn("gemini-3.6-flash est surchargé, tentative de bascule vers gemini-3.1-flash-lite...");
+      try {
+        response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: prompt,
+          config,
+        });
+      } catch (fallbackError) {
+        throw new Error("Les modèles IA sont actuellement surchargés (Erreur 503). Veuillez réessayer dans quelques instants.");
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  const responseText = response?.text;
   if (!responseText) {
     throw new Error("Aucune réponse reçue du modèle AI.");
   }

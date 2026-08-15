@@ -4,7 +4,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 import { Award, CheckCircle2, Clock, TrendingUp, ChevronRight, FileText, Sparkles, BarChart3 } from 'lucide-react';
 
 interface StudentDashboardProps {
-  currentUser: User;
+  currentUser: User | null;
   submissions: Submission[];
   onViewSubmissionDetail: (sub: Submission) => void;
 }
@@ -14,6 +14,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   submissions,
   onViewSubmissionDetail
 }) => {
+  const userName = currentUser?.name || currentUser?.email || 'Étudiant';
+  const userEmail = currentUser?.email || '';
+  const userAvatar = currentUser?.avatar || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200';
   const totalSubmissions = submissions.length;
   const validatedCount = submissions.filter(s => s.isValidated).length;
   const passRate = totalSubmissions > 0 ? ((validatedCount / totalSubmissions) * 100).toFixed(0) : '0';
@@ -45,19 +48,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       <div className="bg-white border-2 border-slate-200 border-l-4 border-l-slate-900 rounded-2xl p-6 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <img
-            src={currentUser.avatar || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200'}
-            alt={currentUser.name}
+            src={userAvatar}
+            alt={userName}
             className="w-16 h-16 rounded-2xl border-2 border-slate-900 object-cover shadow-sm"
           />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{currentUser.name}</h1>
+              <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">{userName}</h1>
               <span className="bg-slate-100 text-slate-900 border border-slate-900/40 text-xs px-2.5 py-0.5 rounded-xl font-bold uppercase tracking-wider">
                 Espace Étudiant
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider">
-              {currentUser.email} • Suivi individuel des performances et ajustements horaire
+              {userEmail} • Suivi individuel des performances et ajustements horaire
             </p>
           </div>
         </div>
