@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { ShieldCheck, Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { ShieldCheck, Lock, Mail, ArrowRight, AlertCircle, X } from 'lucide-react';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -14,8 +14,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   onClose,
   onLoginSuccess
 }) => {
-  const [email, setEmail] = useState('admin@teamdiplome.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,93 +27,125 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setError(null);
 
     try {
-      // 1. Try Supabase Auth
-      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+      // 1. Connexion Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (authErr) {
-        throw new Error(authErr.message || "Identifiants d'administration incorrects.");
+      if (authError) {
+        if (authError.message.includes('Invalid login credentials')) {
+          throw new Error('Email ou mot de passe incorrect.');
+        }
+        throw new Error(authError.message);
       }
 
-      if (authData?.user) {
-        const u = authData.user;
-        const adminUser: User = {
-          id: u.id,
-          email: u.email!,
-          name: u.name || u.user_metadata?.full_name || 'Prof. Alexandre Vance (Admin)',
-          role: u.role || 'admin',
-          avatar: u.avatar || u.user_metadata?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
-        };
-        onLoginSuccess(adminUser);
-        onClose();
-        return;
+      // 2. Vérifier le rôle admin dans la table users
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user!.id)
+        .single();
+
+      if (profileError || !userProfile) {
+        await supabase.auth.signOut();
+        throw new Error('Profil utilisateur introuvable. Contactez l\'administrateur.');
       }
+
+      if (userProfile.role !== 'admin') {
+        await supabase.auth.signOut();
+        throw new Error('Accès refusé. Ce compte n\'a pas les droits administrateur.');
+      }
+
+      // 3. Succès — passer le profil admin
+      const adminUser: User = {
+        id: userProfile.id,
+        email: userProfile.email,
+        name: userProfile.name,
+        role: 'admin',
+        avatar: userProfile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userProfile.email)}`
+      };
+
+      onLoginSuccess(adminUser);
+      onClose();
+
     } catch (err: any) {
-      setError(err.message || "Identifiants invalides.");
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-50/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-white border-2 border-slate-300 border-l-8 border-l-slate-900 rounded-2xl max-w-md w-full p-8 space-y-6 shadow-md relative overflow-hidden">
-        
-        <div className="text-center space-y-2 relative z-10">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-md">
-            <ShieldCheck className="w-8 h-8" />
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-8 space-y-6 shadow-2xl relative">
+
+        {/* Bouton fermer */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Header */}
+        <div className="text-center space-y-2">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-900 flex items-center justify-center shadow-md">
+            <ShieldCheck className="w-7 h-7 text-white" />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
-            Portail Connexion Admin
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+            Portail Administrateur
           </h2>
-          <p className="text-xs text-slate-400">
-            Accès sécurisé réservé au responsable pédagogique Team Diplôme
+          <p className="text-xs text-slate-500">
+            Accès réservé au responsable pédagogique
           </p>
         </div>
 
+        {/* Erreur */}
         {error && (
-          <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 font-bold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {/* Formulaire */}
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-slate-700 font-bold uppercase tracking-wider text-[10px] mb-1">Identifiant Email Admin</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Email Administrateur</label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-300 rounded-2xl text-slate-900 font-medium focus:border-slate-900 outline-none"
+                placeholder="admin@teamdiplome.com"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:border-slate-900 outline-none transition-all"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-slate-700 font-bold uppercase tracking-wider text-[10px] mb-1">Mot de passe</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Mot de passe</label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-300 rounded-2xl text-slate-900 font-medium focus:border-slate-900 outline-none"
+                placeholder="••••••••"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:border-slate-900 outline-none transition-all"
               />
             </div>
           </div>
 
-          <div className="pt-2 flex items-center justify-between gap-3">
+          <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-700 text-slate-700 font-bold uppercase tracking-wider rounded-2xl text-xs border border-slate-300"
+              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors"
             >
               Annuler
             </button>
@@ -121,16 +153,25 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <button
               type="submit"
               disabled={isLoading}
-              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-wider rounded-2xl text-xs shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
             >
-              {isLoading ? 'Vérification...' : 'Se connecter (Admin)'}
-              <ArrowRight className="w-4 h-4" />
+              {isLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Vérification...
+                </>
+              ) : (
+                <>
+                  Connexion Admin
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         </form>
 
-        <div className="text-[11px] text-center text-slate-400 border-t border-slate-200 pt-4 font-mono">
-          Comptes de démonstration pré-configurés. Vous pouvez également basculer de profil dans la barre supérieure.
+        <div className="text-xs text-center text-slate-400 border-t border-slate-100 pt-4">
+          Seuls les comptes avec le rôle <strong>admin</strong> dans Supabase peuvent accéder à ce portail.
         </div>
       </div>
     </div>

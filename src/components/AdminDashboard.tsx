@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AdminAnalytics, StudentProgress, Module } from '../types';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { LayoutDashboard, Users, Award, TrendingUp, TrendingDown, Clock, Download, RefreshCw, ChevronRight, Search, AlertTriangle, CheckCircle2, ShieldCheck, Sparkles, Filter, X, Trash2 } from 'lucide-react';
+import { LayoutDashboard, Users, Award, TrendingUp, TrendingDown, Clock, Download, RefreshCw, ChevronRight, Search, AlertTriangle, CheckCircle2, ShieldCheck, Sparkles, Filter, X } from 'lucide-react';
 
 interface AdminDashboardProps {
   analytics: AdminAnalytics | null;
@@ -20,17 +20,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedStudent, setSelectedStudent] = useState<StudentProgress | null>(null);
   const [studentModuleFilter, setStudentModuleFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'modules' | 'punctuality'>('overview');
-
-  const handleResetDatabase = async () => {
-    try {
-      const res = await fetch('/api/admin/reset-database', { method: 'POST' });
-      if (res.ok) {
-        onRefresh();
-      }
-    } catch (err) {
-      console.error("Erreur réinitialisation :", err);
-    }
-  };
 
   if (!analytics) {
     return (
@@ -81,7 +70,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <a
             href="/api/admin/export-csv"
             download="team_diplome_resultats.csv"
-            className="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+            className="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-[#0f172a] text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm"
           >
             <Download className="w-4 h-4" />
             Exporter Résultats CSV
@@ -89,19 +78,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             onClick={onOpenModuleManagement}
-            className="px-4 py-2.5 rounded-2xl bg-slate-100 border border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+            className="px-4 py-2.5 rounded-2xl bg-slate-100 border border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-[#0f172a] text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm"
           >
             <Sparkles className="w-4 h-4" />
             Nouveau Module / Quiz IA
-          </button>
-
-          <button
-            onClick={handleResetDatabase}
-            className="px-4 py-2.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-600 hover:text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-            title="Réinitialiser la base de données à zéro"
-          >
-            <Trash2 className="w-4 h-4" />
-            Remise à zéro
           </button>
         </div>
       </div>
@@ -159,40 +139,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap ${
             activeTab === 'overview'
-              ? 'bg-slate-900 text-white'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-300'
+              ? 'bg-slate-900 text-[#0f172a]'
+              : 'bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-300'
           }`}
         >
           Graphiques Temporels
         </button>
         <button
           onClick={() => setActiveTab('students')}
-          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap ${
             activeTab === 'students'
-              ? 'bg-slate-900 text-white'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-300'
+              ? 'bg-slate-900 text-[#0f172a]'
+              : 'bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-300'
           }`}
         >
           Classement Étudiants ({analytics.studentProgressList.length})
         </button>
         <button
           onClick={() => setActiveTab('modules')}
-          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap ${
             activeTab === 'modules'
-              ? 'bg-slate-900 text-white'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-300'
+              ? 'bg-slate-900 text-[#0f172a]'
+              : 'bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-300'
           }`}
         >
           Aperçu Modules ({analytics.moduleStats.length})
         </button>
         <button
           onClick={() => setActiveTab('punctuality')}
-          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2 rounded-2xl text-xs uppercase tracking-wider font-bold transition-all whitespace-nowrap ${
             activeTab === 'punctuality'
-              ? 'bg-slate-900 text-white'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-900 hover:text-white border border-slate-300'
+              ? 'bg-slate-900 text-[#0f172a]'
+              : 'bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-300'
           }`}
         >
           Alertes & Ponctualité

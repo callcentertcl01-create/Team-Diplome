@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { ShieldCheck, Mail, Lock, ArrowRight, User } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, ArrowRight, User, CheckCircle } from 'lucide-react';
+
+function translateSupabaseError(message: string): string {
+  if (message.includes('Invalid login credentials')) return 'Email ou mot de passe incorrect.';
+  if (message.includes('Email not confirmed')) return 'Veuillez confirmer votre email avant de vous connecter. Vérifiez votre boîte mail.';
+  if (message.includes('User already registered')) return 'Un compte existe déjà avec cet email. Connectez-vous.';
+  if (message.includes('Password should be at least')) return 'Le mot de passe doit contenir au moins 6 caractères.';
+  if (message.includes('Unable to validate email address')) return 'Adresse email invalide.';
+  if (message.includes('Failed to fetch') || message.includes('fetch')) return 'Impossible de se connecter à Supabase. Vérifiez que VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY sont correctement configurés.';
+  if (message.includes('Invalid API key')) return 'Clé API Supabase invalide. Vérifiez VITE_SUPABASE_ANON_KEY (doit commencer par eyJ...).';
+  if (message.includes('signup is disabled')) return 'Les inscriptions sont désactivées sur ce projet Supabase.';
+  if (message.includes('rate limit')) return 'Trop de tentatives. Attendez quelques minutes avant de réessayer.';
+  return message;
+}
 
 export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -10,24 +23,32 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
   const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        // --- CONNEXION ---
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        
+
+        // Synchroniser le profil backend
         await syncUserWithBackend(data.user);
         onAuthSuccess(data.user);
+
       } else {
-        const fullName = `${firstName} ${lastName}`.trim();
+        // --- INSCRIPTION ---
+        if (!firstName.trim() || !lastName.trim()) {
+          throw new Error('Veuillez renseigner votre prénom et votre nom.');
+        }
+
+        const fullName = `${firstName.trim()} ${lastName.trim()}`;
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -39,22 +60,34 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
             }
           }
         });
+
         if (error) throw error;
-        
-        await syncUserWithBackend(data.user);
-        onAuthSuccess(data.user);
+
+        // Si l'email doit être confirmé, informer l'utilisateur
+        if (data.user && !data.session) {
+          setSuccessMessage(
+            `✅ Compte créé ! Un email de confirmation a été envoyé à ${email}. Vérifiez votre boîte mail puis connectez-vous.`
+          );
+          setIsLogin(true);
+          setEmail('');
+          setPassword('');
+          setFirstName('');
+          setLastName('');
+          return;
+        }
+
+        // Connexion immédiate si pas de confirmation d'email requise
+        if (data.user && data.session) {
+          await syncUserWithBackend(data.user);
+          onAuthSuccess(data.user);
+        }
       }
     } catch (err: any) {
-      let errorMessage = err.message || 'Une erreur est survenue.';
-      if (errorMessage.includes('Failed to fetch')) {
-        errorMessage = "Impossible de se connecter à Supabase. Vérifiez que VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY sont bien renseignés.";
-      }
-      setError(errorMessage);
+      setError(translateSupabaseError(err.message || 'Une erreur est survenue.'));
     } finally {
       setLoading(false);
     }
   };
-
 
   const syncUserWithBackend = async (supabaseUser: any) => {
     if (!supabaseUser) return;
@@ -63,37 +96,47 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
       await fetch('/api/auth/register-student', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email: supabaseUser.email }),
+        body: JSON.stringify({ name, email: supabaseUser.email, supabaseId: supabaseUser.id }),
       });
     } catch (e) {
-      console.error("Erreur sync backend", e);
+      console.warn('Sync backend:', e);
     }
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-8 shadow-sm space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-8 shadow-lg space-y-6">
+
+        {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-16 h-16 mx-auto rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md">
             <ShieldCheck className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Team Diplôme
-          </h2>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Team Diplôme</h1>
           <p className="text-sm text-slate-500">
             {isLogin ? 'Connectez-vous à votre espace étudiant' : 'Créez votre compte étudiant'}
           </p>
         </div>
 
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
-            {error}
+        {/* Message de succès */}
+        {successMessage && (
+          <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium flex items-start gap-2">
+            <CheckCircle className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+            <span>{successMessage}</span>
           </div>
         )}
 
+        {/* Message d'erreur */}
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-medium">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {/* Formulaire */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Prénom</label>
                 <div className="relative">
@@ -103,7 +146,8 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
                     required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:border-slate-900 outline-none transition-colors"
+                    placeholder="Ex : Mutiya"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-100 outline-none transition-all"
                   />
                 </div>
               </div>
@@ -116,7 +160,8 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
                     required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:border-slate-900 outline-none transition-colors"
+                    placeholder="Ex : Emmanuel"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-100 outline-none transition-all"
                   />
                 </div>
               </div>
@@ -126,13 +171,14 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Adresse Email</label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:border-slate-900 outline-none transition-colors"
+                placeholder="votre@email.com"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-100 outline-none transition-all"
               />
             </div>
           </div>
@@ -140,49 +186,62 @@ export function SupabaseAuth({ onAuthSuccess }: { onAuthSuccess: (user: any) => 
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Mot de passe</label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:border-slate-900 outline-none transition-colors"
+                placeholder="••••••••"
+                minLength={6}
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:border-slate-900 focus:ring-2 focus:ring-slate-100 outline-none transition-all"
               />
             </div>
+            {!isLogin && (
+              <p className="text-xs text-slate-400 mt-1">Minimum 6 caractères</p>
+            )}
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+            className="w-full py-3 bg-slate-900 hover:bg-slate-700 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Veuillez patienter...' : isLogin ? 'Se connecter' : 'Créer mon compte'}
-            {!loading && <ArrowRight className="w-4 h-4" />}
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Veuillez patienter...
+              </>
+            ) : (
+              <>
+                {isLogin ? 'Se connecter' : 'Créer mon compte'}
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </form>
 
-        <div className="text-center pt-4 border-t border-slate-100 space-y-3">
+        {/* Liens bas de page */}
+        <div className="text-center space-y-3 pt-2 border-t border-slate-100">
           <button
             type="button"
             onClick={() => {
               setIsLogin(!isLogin);
               setError(null);
+              setSuccessMessage(null);
             }}
-            className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors block w-full"
+            className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"
           >
-            {isLogin ? "Pas encore de compte étudiant ? S'inscrire" : 'Déjà un compte étudiant ? Se connecter'}
+            {isLogin ? "Pas encore de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
           </button>
-          
-          <div className="pt-2 border-t border-slate-100">
+
+          <div>
             <button
               type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('open-admin-login'));
-              }}
-              className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors border border-slate-200"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-admin-login'))}
+              className="text-xs text-slate-400 hover:text-slate-600 font-medium transition-colors"
             >
-              <ShieldCheck className="w-4 h-4 text-slate-700" />
-              Espace Enseignant / Administrateur
+              Accès Professeur / Administrateur →
             </button>
           </div>
         </div>
