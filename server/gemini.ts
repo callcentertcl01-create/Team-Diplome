@@ -8,11 +8,6 @@ export async function generateQuizFromText(pdfOrCourseText: string) {
 
   const ai = new GoogleGenAI({
     apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
   });
 
   const systemInstruction = `Tu es un professeur de relations internationales, de droit et de fiscalité. À partir du texte de cours suivant, génère un questionnaire à choix multiples (QCM) de 10 questions. Chaque question doit avoir 4 propositions de réponse, dont une seule est correcte. Les questions doivent tester la compréhension des concepts clés, des définitions, des auteurs et des mécanismes expliqués dans le texte. Fournis le résultat au format JSON avec la structure : { "questions": [ { "question": "...", "choices": ["...", "...", "...", "..."], "correctAnswer": 0, "explanation": "Explication brève..." } ] }.`;
