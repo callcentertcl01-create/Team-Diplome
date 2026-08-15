@@ -229,37 +229,36 @@ app.get("/api/admin/export-csv", async (req, res) => {
 });
 
 // ============================================================
-// VITE / STATIC SERVING
+// VITE / STATIC SERVING (dev local uniquement)
 // ============================================================
-async function startViteAndListen() {
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
 
-  if (process.env.VERCEL !== "1") {
+// Sur Vercel, le frontend est servi séparément (static build).
+// En local (dev), on démarre Vite en middleware mode.
+if (process.env.VERCEL !== "1") {
+  (async () => {
+    if (process.env.NODE_ENV !== "production") {
+      // Import dynamique de Vite — uniquement en développement local
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (_req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`✅ Server Team Diplôme running on http://0.0.0.0:${PORT}`);
       console.log(`📊 Supabase URL: ${process.env.VITE_SUPABASE_URL || '⚠️  non configuré'}`);
       console.log(`🔑 Service Role Key: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ configurée' : '⚠️  non configurée'}`);
     });
-  }
+  })();
 }
 
-// Si on n'est pas sur Vercel, on lance l'écoute et le setup Vite
-if (process.env.VERCEL !== "1") {
-  startViteAndListen();
-}
-
-// Export de l'application pour Vercel (Serverless Functions)
+// Export de l'app Express pour Vercel (Serverless Function)
 export default app;
