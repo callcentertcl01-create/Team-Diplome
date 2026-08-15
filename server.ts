@@ -1,13 +1,15 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+// ⚠️  NE PAS importer vite statiquement ici — crash Vercel serverless
+// L'import se fait dynamiquement plus bas, uniquement en dev local
 import { db } from "./server/db";
 import { generateQuizFromText } from "./server/gemini";
 import { getSupabaseServer } from "./server/supabaseServer";
 
+const app = express();
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 8080;
+
 async function startServer() {
-  const app = express();
-  const PORT = 3000;
 
   app.use(express.json({ limit: "25mb" }));
 
@@ -413,25 +415,44 @@ async function startServer() {
       return res.status(500).json({ error: err.message || "Erreur lors de la réinitialisation" });
     }
   });
-
-  // --- VITE / STATIC SERVING ---
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
 }
 
-startServer();
+// --- VITE / STATIC SERVING (dev local uniquement) ---
+// Sur Vercel, le frontend est servi depuis dist/ (static build).
+// En local, on démarre Vite en middleware mode avec import dynamique.
+if (process.env.VERCEL !== "1") {
+  (async () => {
+    // Enregistrer toutes les routes API d'abord
+    await startServer();
+
+    if (process.env.NODE_ENV !== "production") {
+      // Import dynamique — Vite ne doit JAMAIS être importé statiquement (crash serverless)
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (_req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`✅ Server Team Diplôme running on http://0.0.0.0:${PORT}`);
+      console.log(`📊 Supabase URL: ${process.env.VITE_SUPABASE_URL || '⚠️  non configuré'}`);
+      console.log(`🔑 Service Role Key: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ configurée' : '⚠️  non configurée'}`);
+    });
+  })();
+} else {
+  // Sur Vercel : enregistrer les routes sans démarrer le serveur
+  startServer();
+}
+
+// ✅ Export de l'app Express pour Vercel (Serverless Function)
+export default app;
+
+
