@@ -5,6 +5,18 @@
 
 ---
 
+## [Pending] — 2026-08-15
+### 🔧 fix: Vercel routing for Express API (Fix "Impossible de joindre le serveur")
+
+**Fichiers modifiés :** `vercel.json`, `api/index.ts` (nouveau)
+
+**Détail :**  
+L'erreur de connexion "Impossible de joindre le serveur" côté frontend (dans `supabaseClient.ts`) était due à un mauvais routage Vercel. Vercel attend que les *Serverless Functions* se trouvent dans le répertoire `api/`. 
+- **Création de `api/index.ts`** : ce point d'entrée officiel pour Vercel importe et exporte l'application Express configurée dans `server.ts`.
+- **Mise à jour de `vercel.json`** : la règle `rewrites` redirige maintenant `/api/(.*)` vers la fonction `/api/index`, permettant à Express de traiter la requête (comme `/api/auth/supabase-signin`) et de renvoyer du JSON au lieu du fichier React `index.html`.
+
+---
+
 ## [aeca33a] — 2026-08-15
 ### ✨ feat: migrate to server-side sync architecture
 
