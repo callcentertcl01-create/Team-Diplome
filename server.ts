@@ -24,15 +24,20 @@ async function startServer() {
     if (!email || !password) {
       return res.status(400).json({ error: "L'adresse e-mail et le mot de passe sont requis." });
     }
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Le mot de passe doit contenir au moins 6 caractères." });
+    }
 
-    const fullName = `${firstName || ''} ${lastName || ''}`.trim() || email;
-    const localUser = db.registerStudent(fullName, email);
+    const cleanEmail = email.trim().toLowerCase();
+    const fullName = `${firstName || ''} ${lastName || ''}`.trim() || cleanEmail;
+    let supabaseUserId: string | undefined;
+    let supabaseSession: any = null;
 
     const supabase = getSupabaseServer();
     if (supabase) {
       try {
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: cleanEmail,
           password,
           options: {
             data: {
@@ -44,29 +49,47 @@ async function startServer() {
         });
 
         if (error) {
-          if (error.message.includes("already registered")) {
+          if (error.message.includes("already registered") || error.message.includes("User already registered")) {
             return res.status(400).json({ error: "Un compte existe déjà avec cet e-mail. Veuillez vous connecter." });
           }
+          return res.status(400).json({ error: error.message || "Erreur lors de l'inscription." });
         }
 
-        return res.json({
-          user: {
-            id: data?.user?.id || localUser.id,
-            email: localUser.email,
-            name: localUser.name,
-            role: localUser.role,
-            avatar: localUser.avatar
-          },
-          session: data?.session || { user: { id: localUser.id, email: localUser.email } }
-        });
+        if (data?.user) {
+          supabaseUserId = data.user.id;
+          supabaseSession = data.session;
+
+          // Try auto-confirming email if admin API is available
+          try {
+            await supabase.auth.admin.updateUserById(data.user.id, { email_confirm: true });
+          } catch (autoConfirmErr) {
+            console.warn("SignUp auto-confirm note:", autoConfirmErr);
+          }
+        }
       } catch (err: any) {
         console.error("Erreur backend Supabase Auth SignUp :", err);
+        return res.status(500).json({ error: "Erreur serveur lors de l'inscription." });
       }
     }
 
+    const localUser = db.registerStudent(fullName, cleanEmail, supabaseUserId);
+
+    const fullUserObj = {
+      id: localUser.id,
+      email: localUser.email,
+      name: localUser.name,
+      role: localUser.role,
+      avatar: localUser.avatar
+    };
+
+    const fullSessionObj = supabaseSession ? { ...supabaseSession, user: fullUserObj } : {
+      user: fullUserObj,
+      access_token: 'local-token-' + Date.now()
+    };
+
     return res.json({
-      user: localUser,
-      session: { user: { id: localUser.id, email: localUser.email } }
+      user: fullUserObj,
+      session: fullSessionObj
     });
   });
 
@@ -76,59 +99,117 @@ async function startServer() {
       return res.status(400).json({ error: "L'adresse e-mail et le mot de passe sont requis." });
     }
 
-    // Check admin credentials
-    if (email.toLowerCase() === 'admin@teamdiplome.com' && password === 'admin123') {
-      let adminUser = db.getUserByEmail(email);
-      if (!adminUser) {
-        adminUser = {
-          id: 'admin-1',
-          email,
-          name: 'Prof. Alexandre Vance (Admin)',
-          role: 'admin',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
-        };
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Check admin credentials
+    if (cleanEmail === 'admin@teamdiplome.com' || cleanEmail === 'admin@formation.fr') {
+      if (password === 'admin123') {
+        let adminUser = db.getUserByEmail(cleanEmail);
+        if (!adminUser) {
+          adminUser = {
+            id: 'admin-1',
+            email: cleanEmail,
+            name: 'Prof. Alexandre Vance (Admin)',
+            role: 'admin',
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+          };
+        }
+        return res.json({
+          user: adminUser,
+          session: { user: adminUser, access_token: 'admin-token' }
+        });
+      } else {
+        return res.status(401).json({ error: "Mot de passe administrateur incorrect." });
       }
-      return res.json({
-        user: adminUser,
-        session: { user: { id: adminUser.id, email: adminUser.email, role: 'admin' } }
-      });
     }
 
+    // 2. Validate with Supabase Auth
     const supabase = getSupabaseServer();
     if (supabase) {
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
+        let { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
           password
         });
 
-        if (!error && data?.user) {
-          let localUser = db.getUserByEmail(email);
-          if (!localUser) {
-            localUser = db.registerStudent(data.user.user_metadata?.full_name || email, email);
+        // If email not confirmed in Supabase, auto-confirm via admin API if available, then retry
+        if (error && error.message.includes('Email not confirmed')) {
+          try {
+            const { data: userData } = await supabase.auth.admin.listUsers();
+            const targetUser = userData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+            if (targetUser) {
+              await supabase.auth.admin.updateUserById(targetUser.id, { email_confirm: true });
+              const retry = await supabase.auth.signInWithPassword({
+                email: cleanEmail,
+                password
+              });
+              data = retry.data;
+              error = retry.error;
+            }
+          } catch (autoConfirmErr) {
+            console.warn("Auto-confirm attempt note:", autoConfirmErr);
           }
+        }
+
+        if (error) {
+          console.warn("Supabase Auth SignIn Refused:", error.message);
+          let userMessage = "Adresse e-mail ou mot de passe incorrect.";
+          if (error.message.includes("Email not confirmed")) {
+            userMessage = "E-mail non confirmé. Veuillez vérifier votre boîte de réception.";
+          }
+          return res.status(401).json({ error: userMessage });
+        }
+
+        if (data?.user) {
+          let localUser = db.getUserByEmail(cleanEmail);
+          if (!localUser) {
+            const nameFromEmail = cleanEmail.split('@')[0];
+            const formattedName = nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1);
+            localUser = db.registerStudent(formattedName, cleanEmail, data.user.id);
+          } else if (localUser.id !== data.user.id) {
+            localUser.id = data.user.id;
+          }
+
+          const fullUserObj = {
+            id: localUser.id,
+            email: localUser.email,
+            name: localUser.name,
+            role: localUser.role,
+            avatar: localUser.avatar
+          };
+
           return res.json({
-            user: localUser,
-            session: data.session
+            user: fullUserObj,
+            session: data.session ? { ...data.session, user: fullUserObj } : {
+              user: fullUserObj,
+              access_token: 'local-token-' + Date.now()
+            }
           });
         }
       } catch (err: any) {
-        // Fallback gracefully
+        console.error("Erreur backend Supabase Auth SignIn :", err);
+        return res.status(500).json({ error: "Erreur lors de la connexion." });
       }
-    }
+    } else {
+      // Local fallback mode when Supabase backend is not configured
+      let localUser = db.getUserByEmail(cleanEmail);
+      if (!localUser) {
+        return res.status(401).json({ error: "Aucun compte trouvé avec cet e-mail. Veuillez d'abord vous inscrire." });
+      }
 
-    // Fallback to local DB lookup or auto-creation for seamless authentication
-    let localUser = db.getUserByEmail(email);
-    if (!localUser) {
-      const nameFromEmail = email.split('@')[0];
-      const formattedName = nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1);
-      localUser = db.registerStudent(formattedName, email);
-    }
+      const fullUserObj = {
+        id: localUser.id,
+        email: localUser.email,
+        name: localUser.name,
+        role: localUser.role,
+        avatar: localUser.avatar
+      };
 
-    return res.json({
-      user: localUser,
-      session: { user: { id: localUser.id, email: localUser.email } }
-    });
+      return res.json({
+        user: fullUserObj,
+        session: { user: fullUserObj, access_token: 'local-token-' + Date.now() }
+      });
+    }
   });
 
   app.post("/api/auth/login", (req, res) => {

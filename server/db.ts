@@ -1,19 +1,57 @@
+import fs from 'fs';
+import path from 'path';
 import { User, Module, Session, Quiz, Submission, AdminAnalytics, StudentProgress, ModuleStat, DailyScoreTrend } from '../src/types';
 import { calculateBonusMalusScore } from './scoreUtils';
 import { getSupabaseServer } from './supabaseServer';
 
-// Database Store with Supabase Synchronization
+const DATA_FILE_PATH = path.join(process.cwd(), 'server_data_store.json');
+
+// Database Store with Local File Persistence & Supabase Synchronization
 class DatabaseStore {
   private users: User[] = [];
   private modules: Module[] = [];
   private submissions: Submission[] = [];
   private isSyncedWithSupabase = false;
-
   private isSyncing = false;
 
   constructor() {
     this.seedInitialData();
+    this.loadFromLocalFile();
     this.syncFromSupabase();
+  }
+
+  private saveToLocalFile() {
+    try {
+      const payload = {
+        users: this.users,
+        modules: this.modules,
+        submissions: this.submissions
+      };
+      fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(payload, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn("Avertissement écriture fichier local de données :", err);
+    }
+  }
+
+  private loadFromLocalFile() {
+    try {
+      if (fs.existsSync(DATA_FILE_PATH)) {
+        const raw = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.users) && parsed.users.length > 0) {
+          this.users = parsed.users;
+        }
+        if (Array.isArray(parsed.modules) && parsed.modules.length > 0) {
+          this.modules = parsed.modules;
+        }
+        if (Array.isArray(parsed.submissions) && parsed.submissions.length > 0) {
+          this.submissions = parsed.submissions;
+        }
+        console.log("💾 Données de progression chargées depuis server_data_store.json");
+      }
+    } catch (err) {
+      console.warn("Avertissement lecture fichier local de données :", err);
+    }
   }
 
   public async syncFromSupabase() {
@@ -24,17 +62,17 @@ class DatabaseStore {
     this.isSyncing = true;
 
     try {
-      // 1. Fetch Users / Profiles from Supabase
+      // 1. Fetch Users / Profiles from Supabase & Auth
       const { data: profiles, error: pErr } = await supabase.from('profiles').select('*');
       if (!pErr && profiles && profiles.length > 0) {
         profiles.forEach((p: any) => {
-          const existingIndex = this.users.findIndex(u => u.id === p.id || u.email.toLowerCase() === p.email?.toLowerCase());
+          const existingIndex = this.users.findIndex(u => u.id === p.id || u.email?.toLowerCase() === p.email?.toLowerCase());
           const mappedUser: User = {
             id: p.id,
             email: p.email,
-            name: p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.email,
+            name: p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.email,
             role: p.role || 'student',
-            avatar: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.email)}`
+            avatar: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.email || 'user')}`
           };
           if (existingIndex >= 0) {
             this.users[existingIndex] = mappedUser;
@@ -44,12 +82,52 @@ class DatabaseStore {
         });
       }
 
+      // Also migrate any existing auth.users directly into profiles
+      try {
+        const { data: authUsersData } = await supabase.auth.admin.listUsers();
+        if (authUsersData?.users && authUsersData.users.length > 0) {
+          for (const au of authUsersData.users) {
+            if (!au.email) continue;
+            const existingInProfiles = profiles?.find((p: any) => p.id === au.id || p.email?.toLowerCase() === au.email.toLowerCase());
+            const fullName = au.user_metadata?.full_name || au.user_metadata?.name || au.email.split('@')[0];
+            const role = au.user_metadata?.role || (au.email.toLowerCase() === 'admin@teamdiplome.com' ? 'admin' : 'student');
+            const avatar = au.user_metadata?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(au.email)}`;
+
+            if (!existingInProfiles) {
+              await supabase.from('profiles').upsert({
+                id: au.id,
+                email: au.email,
+                name: fullName,
+                role: role,
+                avatar: avatar
+              });
+            }
+
+            const existingIndex = this.users.findIndex(u => u.id === au.id || u.email?.toLowerCase() === au.email.toLowerCase());
+            const mappedUser: User = {
+              id: au.id,
+              email: au.email,
+              name: fullName,
+              role: role,
+              avatar: avatar
+            };
+            if (existingIndex >= 0) {
+              this.users[existingIndex] = mappedUser;
+            } else {
+              this.users.push(mappedUser);
+            }
+          }
+        }
+      } catch (authListErr) {
+        // Service role might be restricted, fallback gracefully
+      }
+
       // 2. Fetch Modules & Sessions from Supabase
       const { data: dbModules, error: mErr } = await supabase.from('modules').select('*');
       const { data: dbSessions, error: sErr } = await supabase.from('sessions').select('*');
 
       if (!mErr && dbModules && dbModules.length > 0) {
-        this.modules = dbModules.map((m: any) => {
+        const fetchedModules = dbModules.map((m: any) => {
           const mSessions = (dbSessions || [])
             .filter((s: any) => s.module_id === m.id)
             .map((s: any) => ({
@@ -75,34 +153,54 @@ class DatabaseStore {
             sessions: mSessions
           };
         });
+
+        // Merge fetched modules with local modules so no local additions are lost
+        fetchedModules.forEach(fm => {
+          const idx = this.modules.findIndex(m => m.id === fm.id);
+          if (idx >= 0) {
+            this.modules[idx] = fm;
+          } else {
+            this.modules.push(fm);
+          }
+        });
       } else {
         // Seed initial modules to Supabase if empty
         await this.pushModulesToSupabase();
       }
 
-      // 3. Fetch Submissions from Supabase
+      // 3. Fetch Submissions from Supabase & Merge
       const { data: dbSubmissions, error: subErr } = await supabase.from('submissions').select('*');
       if (!subErr && dbSubmissions) {
-        this.submissions = dbSubmissions.map((s: any) => ({
-          id: s.id,
-          sessionId: s.session_id,
-          sessionTitle: s.session_title || 'Session',
-          moduleTitle: s.module_title || 'Module',
-          sessionDate: s.session_date || s.submitted_at?.split('T')[0] || '2026-08-12',
-          studentId: s.student_id,
-          studentName: s.student_name || 'Étudiant',
-          studentEmail: s.student_email || '',
-          submittedAt: s.submitted_at,
-          answers: s.answers || [],
-          baseScore: Number(s.base_score || 0),
-          adjustment: Number(s.adjustment || 0),
-          finalScore: Number(s.final_score || 0),
-          isValidated: s.is_validated || false,
-          isLate: s.is_late || false,
-          lateDays: Number(s.late_days || 0)
-        }));
+        dbSubmissions.forEach((s: any) => {
+          const mappedSub: Submission = {
+            id: s.id,
+            sessionId: s.session_id,
+            sessionTitle: s.session_title || 'Session',
+            moduleTitle: s.module_title || 'Module',
+            sessionDate: s.session_date || s.submitted_at?.split('T')[0] || '2026-08-12',
+            studentId: s.student_id,
+            studentName: s.student_name || 'Étudiant',
+            studentEmail: s.student_email || '',
+            submittedAt: s.submitted_at,
+            answers: s.answers || [],
+            baseScore: Number(s.base_score || 0),
+            adjustment: Number(s.adjustment || 0),
+            finalScore: Number(s.final_score || 0),
+            isValidated: s.is_validated || false,
+            isLate: s.is_late || false,
+            lateDays: Number(s.late_days || 0)
+          };
+
+          const existingIdx = this.submissions.findIndex(sub => sub.id === s.id);
+          if (existingIdx >= 0) {
+            this.submissions[existingIdx] = mappedSub;
+          } else {
+            this.submissions.push(mappedSub);
+          }
+        });
       }
 
+      this.saveToLocalFile();
       this.isSyncedWithSupabase = true;
       console.log('✅ Synchronisation BDD Supabase achevée.');
     } catch (err) {
@@ -172,13 +270,13 @@ class DatabaseStore {
             pdfFileName: 'Cours_RI101_Jour1_Realisme.pdf',
             pdfTextSnippet: 'Le réalisme politique en relations internationales insiste sur l anomie du système international, l importance de l État-nation et la recherche de la puissance...',
             isQuizReady: true,
-            status: 'completed',
+            status: 'ready',
             quiz: {
               id: 'quiz-sess-1',
               title: 'Quiz Jour 1 - Réalisme politique',
               questions: [
                 {
-                  id: 1,
+                  id: 'q1-1',
                   question: "Selon la théorie réaliste des relations internationales, quel est l'acteur principal du système international ?",
                   choices: [
                     "Les organisations non gouvernementales (ONG)",
@@ -190,7 +288,7 @@ class DatabaseStore {
                   explanation: "Pour les réalistes, l'État souverain est l'acteur central et le principal sujet du système international."
                 },
                 {
-                  id: 2,
+                  id: 'q1-2',
                   question: "Que désigne le concept de 'dilemme de sécurité' ?",
                   choices: [
                     "L'impossibilité d'établir une armée permanente",
@@ -215,13 +313,13 @@ class DatabaseStore {
             pdfFileName: 'Cours_RI101_Jour2_Liberalisme_Constructivisme.pdf',
             pdfTextSnippet: 'Le libéralisme met en avant l interdépendance économique et le rôle des institutions internationales. Le constructivisme (Wendt) montre que la réalité internationale est socialement construite...',
             isQuizReady: true,
-            status: 'active',
+            status: 'ready',
             quiz: {
               id: 'quiz-sess-2',
               title: 'Quiz Jour 2 - Libéralisme et Constructivisme',
               questions: [
                 {
-                  id: 1,
+                  id: 'q2-1',
                   question: "Selon la théorie libérale, quel facteur favorise principalement la paix entre les nations ?",
                   choices: [
                     "La course aux armements nucléaires",
@@ -233,7 +331,7 @@ class DatabaseStore {
                   explanation: "L'interdépendance économique et les organisations internationales favorisent la coopération et réduisent les risques de conflit."
                 },
                 {
-                  id: 2,
+                  id: 'q2-2',
                   question: "Quelle est la citation célèbre d'Alexander Wendt illustrant la posture constructiviste ?",
                   choices: [
                     "La guerre est la poursuite de la politique par d'autres moyens",
@@ -245,7 +343,7 @@ class DatabaseStore {
                   explanation: "Alexander Wendt résume le constructivisme par 'Anarchy is what states make of it'."
                 },
                 {
-                  id: 3,
+                  id: 'q2-3',
                   question: "Comment le constructivisme appréhende-t-il les identités et intérêts des États ?",
                   choices: [
                     "Comme des données fixes imposées par la géographie",
@@ -356,19 +454,24 @@ class DatabaseStore {
     return this.users.find(u => u.id === id);
   }
 
-  public registerStudent(name: string, email: string): User {
+  public registerStudent(name: string, email: string, customId?: string): User {
     const existing = this.getUserByEmail(email);
     if (existing) {
+      if (customId && existing.id !== customId) {
+        existing.id = customId;
+      }
+      this.saveToLocalFile();
       return existing;
     }
     const newUser: User = {
-      id: `u-stud-${Date.now()}`,
+      id: customId || `u-stud-${Date.now()}`,
       email,
       name,
       role: 'student',
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`
     };
     this.users.push(newUser);
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -413,6 +516,7 @@ class DatabaseStore {
       sessions: []
     };
     this.modules.push(newModule);
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -458,6 +562,7 @@ class DatabaseStore {
     };
 
     mod.sessions.push(newSession);
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -487,6 +592,7 @@ class DatabaseStore {
     found.session.quiz = quiz;
     found.session.isQuizReady = true;
     found.session.status = 'ready';
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -504,6 +610,7 @@ class DatabaseStore {
     const found = this.getSessionById(sessionId);
     if (found) {
       found.session.status = status;
+      this.saveToLocalFile();
       const supabase = getSupabaseServer();
       if (supabase) {
         supabase.from('sessions').update({ status }).eq('id', sessionId).then(({ error }) => {
@@ -528,15 +635,19 @@ class DatabaseStore {
 
     const session = sessObj.session;
 
-    // Check if student already submitted for this session
+    // Check if student already submitted for this session by ID or Email
     const existing = this.submissions.find(
-      s => s.sessionId === sessionId && s.studentId === studentId
+      s => s.sessionId === sessionId && (s.studentId === student.id || s.studentEmail.toLowerCase() === student.email.toLowerCase())
     );
     if (existing) {
-      throw new Error("Vous avez déjà soumis vos réponses pour ce quiz.");
+      return existing;
     }
 
-    const correctAnswers = session.quiz.questions.map(q => q.correctAnswer);
+    const correctAnswers = session.quiz.questions.map(q => {
+      if (typeof q.correctAnswer === 'number') return q.correctAnswer;
+      if (typeof (q as any).correctOptionIndex === 'number') return (q as any).correctOptionIndex;
+      return 0;
+    });
     const now = new Date();
 
     const scoreRes = calculateBonusMalusScore(
@@ -567,6 +678,7 @@ class DatabaseStore {
     };
 
     this.submissions.push(newSub);
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -593,8 +705,12 @@ class DatabaseStore {
   }
 
   public getSubmissionsForStudent(studentId: string): Submission[] {
+    const student = this.getUserById(studentId);
+    if (!student) {
+      return this.submissions.filter(s => s.studentId === studentId);
+    }
     return this.submissions
-      .filter(s => s.studentId === studentId)
+      .filter(s => s.studentId === student.id || s.studentEmail.toLowerCase() === student.email.toLowerCase())
       .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
   }
 
@@ -766,6 +882,7 @@ class DatabaseStore {
 
     // Remove module
     this.modules.splice(modIndex, 1);
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -793,6 +910,7 @@ class DatabaseStore {
 
     // Remove submissions for this session
     this.submissions = this.submissions.filter(sub => sub.sessionId !== sessionId);
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {
@@ -815,6 +933,7 @@ class DatabaseStore {
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
       }
     ];
+    this.saveToLocalFile();
 
     const supabase = getSupabaseServer();
     if (supabase) {

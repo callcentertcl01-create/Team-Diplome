@@ -128,15 +128,23 @@ export default function App() {
         .then(data => {
           if (Array.isArray(data)) {
             setStudentSubmissions(data);
+          } else {
+            setStudentSubmissions([]);
           }
         })
-        .catch(err => console.error("Erreur historique étudiant :", err));
+        .catch(err => {
+          console.error("Erreur historique étudiant :", err);
+          setStudentSubmissions([]);
+        });
+    } else {
+      setStudentSubmissions([]);
     }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.email, currentUser?.role]);
 
   const handleSelectUser = (user: User) => {
     setCurrentUser(user);
     setActiveQuizSession(null);
+    setStudentSubmissions([]);
   };
 
   const handleStartQuiz = (session: Session) => {
@@ -145,10 +153,17 @@ export default function App() {
 
   const handleQuizSubmitted = async (submission: Submission) => {
     // Refresh student submissions & admin analytics
-    setStudentSubmissions(prev => [...prev, submission]);
-    const analyticsRes = await fetch('/api/admin/analytics');
-    const analyticsData = await analyticsRes.json();
-    setAdminAnalytics(analyticsData);
+    setStudentSubmissions(prev => {
+      const filtered = prev.filter(s => s.sessionId !== submission.sessionId);
+      return [...filtered, submission];
+    });
+    try {
+      const analyticsRes = await fetch('/api/admin/analytics');
+      const analyticsData = await analyticsRes.json();
+      setAdminAnalytics(analyticsData);
+    } catch (err) {
+      console.warn("Analytics refresh note:", err);
+    }
   };
 
   if (isLoading) {
@@ -209,6 +224,9 @@ export default function App() {
           await supabase.auth.signOut();
           setSession(null);
           setCurrentUser(null);
+          setStudentSubmissions([]);
+          setActiveQuizSession(null);
+          setActiveTab('planning');
         }}
       />
 
@@ -223,10 +241,12 @@ export default function App() {
         )}
 
         {/* 1. QUIZ ARENA VIEW (Active Quiz taking or correction view) */}
-        {activeQuizSession ? (
+        {activeQuizSession && currentUser ? (
           <QuizArena
+            key={`${activeQuizSession.id}-${currentUser.id}`}
             session={activeQuizSession}
             currentUser={currentUser}
+            initialSubmission={studentSubmissions.find(s => s.sessionId === activeQuizSession.id)}
             onSubmitted={handleQuizSubmitted}
             onCancel={() => setActiveQuizSession(null)}
           />

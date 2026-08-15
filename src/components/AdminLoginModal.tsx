@@ -27,40 +27,29 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setError(null);
 
     try {
-      // 1. Try Supabase Auth first
+      // 1. Try Supabase Auth
       const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (!authErr && authData.user) {
+      if (authErr) {
+        throw new Error(authErr.message || "Identifiants d'administration incorrects.");
+      }
+
+      if (authData?.user) {
         const u = authData.user;
         const adminUser: User = {
           id: u.id,
           email: u.email!,
-          name: u.user_metadata?.full_name || 'Prof. Alexandre Vance (Admin)',
-          role: 'admin',
-          avatar: u.user_metadata?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+          name: u.name || u.user_metadata?.full_name || 'Prof. Alexandre Vance (Admin)',
+          role: u.role || 'admin',
+          avatar: u.avatar || u.user_metadata?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
         };
         onLoginSuccess(adminUser);
         onClose();
         return;
       }
-
-      // 2. Fallback to API check
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role: 'admin' })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Identifiants d'administration incorrects.");
-      }
-
-      onLoginSuccess(data.user);
-      onClose();
     } catch (err: any) {
       setError(err.message || "Identifiants invalides.");
     } finally {

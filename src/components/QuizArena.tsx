@@ -5,6 +5,7 @@ import { Clock, CheckCircle2, XCircle, AlertCircle, Sparkles, ArrowRight, ArrowL
 interface QuizArenaProps {
   session: Session;
   currentUser: User;
+  initialSubmission?: Submission | null;
   onSubmitted: (submission: Submission) => void;
   onCancel: () => void;
 }
@@ -12,18 +13,53 @@ interface QuizArenaProps {
 export const QuizArena: React.FC<QuizArenaProps> = ({
   session,
   currentUser,
+  initialSubmission,
   onSubmitted,
   onCancel
 }) => {
   const quiz = session.quiz;
-  const questions = quiz?.questions || [];
+  const rawQuestions = quiz?.questions || [];
+
+  // Normalize questions across all potential property naming schemas
+  const questions = React.useMemo(() => {
+    return rawQuestions.map((q: any, idx: number) => {
+      const choices = Array.isArray(q.choices)
+        ? q.choices
+        : Array.isArray(q.options)
+        ? q.options
+        : [];
+      const questionText = q.question || q.questionText || `Question ${idx + 1}`;
+      const correctAnswer = typeof q.correctAnswer === 'number'
+        ? q.correctAnswer
+        : typeof q.correctOptionIndex === 'number'
+        ? q.correctOptionIndex
+        : 0;
+      return {
+        id: q.id || `q-${idx + 1}`,
+        question: questionText,
+        choices,
+        correctAnswer,
+        explanation: q.explanation || ''
+      };
+    });
+  }, [rawQuestions]);
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState<number[]>(new Array(questions.length).fill(-1));
   const [timeLeft, setTimeLeft] = useState<number>(60 * 60); // 60 minutes countdown
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionResult, setSubmissionResult] = useState<Submission | null>(null);
+  const [submissionResult, setSubmissionResult] = useState<Submission | null>(initialSubmission || null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Synchronize state when session, user or initialSubmission changes
+  useEffect(() => {
+    setCurrentQuestionIndex(0);
+    setUserAnswers(new Array(questions.length).fill(-1));
+    setTimeLeft(60 * 60);
+    setIsSubmitting(false);
+    setErrorMessage(null);
+    setSubmissionResult(initialSubmission || null);
+  }, [session.id, currentUser.id, initialSubmission, questions.length]);
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
